@@ -6,9 +6,9 @@
 [![Host neutral](https://img.shields.io/badge/host-neutral-24292f?style=flat-square)](HARNESS.md)
 [![Research harness](https://img.shields.io/badge/type-research%20harness-0969da?style=flat-square)](HARNESS.md)
 
-`/deep` 是給可使用工具的 LLM Agent 使用的 **meta-research trigger**。
+`/deep` 是給可使用工具的 LLM Agent 使用的明確 **meta-research trigger**。
 
-它不是固定流程的「深度研究」工具。它會把宿主 Agent，例如 Claude Code、Codex，或其他具備工具能力的 Agent，變成研究流程的 **Organizer**，在一次有邊界、有狀態、可稽核的研究工作中調度多種 worker：低成本查證、學術搜尋、深度研究 API，以及只處理既有檔案的整理器。
+只有使用者明確輸入 `/deep` 時才啟動。它不是固定流程的「深度研究」工具。它會把宿主 Agent，例如 Claude Code、Codex，或其他具備工具能力的 Agent，變成研究流程的 **Organizer**，在一次有邊界、有狀態、可稽核的研究工作中調度多種 worker：低成本查證、學術搜尋、深度研究 API，以及只處理既有檔案的整理器。
 
 核心目標很直接：**用每一美元換到最多有用資訊**，同時讓主張可追溯、衝突可見，並把昂貴呼叫留給真正能降低不確定性的地方。
 
@@ -57,7 +57,7 @@ flowchart TD
 
 ## 研究契約
 
-每次研究都由三個獨立軸線驅動。Preset 是組合捷徑，不是硬編碼預算。
+每次 `/deep` 都必須請使用者確認三個獨立軸線。Organizer 應該先從上下文推斷推薦 preset，但在 contract 被確認前不應花 worker 成本。Preset 是組合捷徑，不是硬編碼預算。
 
 | 軸線 | 選項 |
 |---|---|

@@ -4,7 +4,7 @@
 
 ## What this is
 
-`/deep` is not a research tool — it is a **trigger** that wakes the host agent into an Organizer role. The harness is the Organizer protocol: a discipline for framing the question, choosing tools, keeping state, checking claims, and knowing when to stop. It is:
+`/deep` is not a research tool — it is an **explicit trigger** that wakes the host agent into an Organizer role. Do not run this protocol for ordinary research requests unless the user explicitly invokes `/deep`. The harness is the Organizer protocol: a discipline for framing the question, choosing tools, keeping state, checking claims, and knowing when to stop. It is:
 
 - **single-execution** — one trigger, one research session, one verdict
 - **stateful** — evidence, spend, and open disputes live in a Research State file, not in anyone's working memory
@@ -17,7 +17,7 @@ The objective: **maximum information gain per dollar across the available tool p
 
 | Term | Meaning |
 |---|---|
-| Trigger | `/deep <question> [hints]` — wakes the Organizer |
+| Trigger | explicit `/deep <question> [hints]` — wakes the Organizer |
 | Organizer | the host agent running this loop; owns all judgment |
 | Harness | this Organizer protocol: tool affordances + state discipline + loop contract |
 | Loop | inspect → choose → execute → normalize → reconcile → terminate? |
@@ -62,7 +62,7 @@ Example commands in this spec use bare `python` for illustration; the host bindi
 The harness is a single-trigger skill, not a workflow engine. Keep the boundary clear each time `/deep` wakes up:
 
 **Organizer owns（cannot be delegated to code）**:
-- frame the question, ask clarifying questions, and set the research contract
+- infer the research target from context, ask clarifying questions only when needed, and always set the research contract
 - choose shared, isolated, or targeted branches
 - generate blind-verification queries from the fixed template（see isolated branch）
 - curate claims, reconcile evidence, identify disputes, and decide when to stop
@@ -113,9 +113,9 @@ disputes: <claim ids + what evidence would settle each>
 
 ## Organizer loop
 
-This is a protocol for the Organizer's attention, not a fixed pipeline. Skip steps that the contract makes unnecessary; never skip the contract, state discipline, or verification floor when they apply.
+This is a protocol for the Organizer's attention, not a fixed pipeline. Infer the research target from conversation context by default; ask plan-adjustment questions only when ambiguity would change scope, worker choice, cost, or answer. Never skip the three-axis contract, and never skip state discipline or verification floor when they apply.
 
-**0 INIT** — Read the conversation context. If the framing is ambiguous in ways that change the answer (goal, region, timeframe, stakes), ask ≤3 clarifying questions — skip on "go"／"快". Establish the **research contract**（three axes, below）: infer defaults from the question's stakes, present them for a one-tap confirm, skip entirely for obvious quick questions. Write the initial state file.
+**0 INIT** — Read the conversation context and infer what the user wants researched. If the framing is ambiguous in ways that change the answer or research plan (goal, region, timeframe, stakes, audience, exclusions), ask ≤3 clarifying questions; otherwise proceed with the inferred framing. Then establish the **research contract**（three axes, below）every time: infer a recommended preset from the question's stakes, present the three-axis options for user confirmation, and record the result. Write the initial state file when the contract requires one.
 
 **1 INSPECT** — Read the state. What is the weakest load-bearing element right now: uncovered ground, a single-source claim that matters, an open dispute? On the first iteration, also check `<cwd>/reports/` for recent artifacts on overlapping topics — reusing a past paid report through the processor is ~free（flag staleness against the question's time-sensitivity）.
 
@@ -139,7 +139,7 @@ Typical opening: `cascade ∥ scholar` (cheap heterogeneous retrieval). **If the
 
 ## The research contract（three independent axes, set at INIT）
 
-One card, three axes — the Organizer infers defaults from the question's stakes and presents them for a one-tap confirm; obvious quick questions skip the card entirely.
+One card, three axes — mandatory on every `/deep`. The Organizer infers a recommended preset from the question's stakes and context, but the user must confirm or choose the three-axis contract before worker spend.
 
 | Axis | Options（composition, not dollar cutoffs） |
 |---|---|

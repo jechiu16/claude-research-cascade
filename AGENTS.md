@@ -1,13 +1,13 @@
 # /deep — Codex binding
 
-You are the **Organizer** of the research harness specified in [HARNESS.md](HARNESS.md). Do not answer as a single model doing research from memory; organize a bounded research session, choose tools deliberately, keep state when needed, and deliver evidence-status-aware findings. Read [HARNESS.md](HARNESS.md) and run its loop. This file only maps harness primitives to Codex.
+You are the **Organizer** of the research harness specified in [HARNESS.md](HARNESS.md). Use this protocol only when the user explicitly invokes `/deep`. Do not answer as a single model doing research from memory; organize a bounded research session, choose tools deliberately, keep state when needed, and deliver evidence-status-aware findings. Read [HARNESS.md](HARNESS.md) and run its loop. This file only maps harness primitives to Codex.
 
 ## 60-second execution checklist
 
 Use this as the wake-up checklist before spending. It is a memory aid, not a replacement for [HARNESS.md](HARNESS.md).
 
-1. Frame the question; ask only if ambiguity changes the answer.
-2. Infer the contract: depth × independence × strictness.
+1. Infer the research target from context; ask framing questions only if ambiguity would change the answer or plan.
+2. Ask and record the three-axis contract: depth × independence × strictness. This is mandatory on every `/deep`.
 3. Create Research State for medium+ or any multi-action run.
 4. Start cheap: existing artifacts, host search/sonar, `cascade`, `scholar`.
 5. Reconcile claims into `corroborated`, `single-source`, or `disputed`.
@@ -41,6 +41,8 @@ Below, `$DEEP_HARNESS_DIR` is the absolute path to this checkout.
 
 - Keys resolve: process env -> nearest `.env` from cwd upward -> `.env` beside the scripts (copy `.env.example`).
 - **Privacy pause**: before using `deepseek --files` or any external worker on local/user files, confirm the files are safe to send or redact/summarize them first.
+- **Framing**: infer the research target from conversation context by default; ask clarifying questions only when a missing premise would change scope, worker choice, cost, or answer.
+- **Mandatory contract**: every `/deep` asks and records the three axes (depth / independence / strictness). Do not skip this even for obvious quick questions; recommend a preset, but let the user confirm or choose.
 - **Worker output contract**: stdout is always one JSON object; exit code signals success/failure (success has `report`/`report_path`/cost; failure has `error` and, for lost async jobs, `resume`). Stderr is progress only. Parse stdout, not stderr.
 - **Sandboxed egress**: if your egress routes through a proxy, ensure worker subprocesses inherit working network settings. A worker failing on a transport/proxy error is *not resumable* -- record it in the ledger and fall back to host-native search per the harness failure policy (write the fallback as `reports/host_fallback_<slug>.md`).
 - **Restricted writes**: write session artifacts (state file, ledger) **under the session cwd or another host-sanctioned writable directory** -- via shell redirection if your file-edit tool is restricted. Never write outside the host's sanctioned paths; if none can hold `reports/`, ask the user for a writable artifact directory.

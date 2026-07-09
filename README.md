@@ -6,9 +6,9 @@
 [![Host neutral](https://img.shields.io/badge/host-neutral-24292f?style=flat-square)](HARNESS.md)
 [![Research harness](https://img.shields.io/badge/type-research%20harness-0969da?style=flat-square)](HARNESS.md)
 
-`/deep` is a **meta-research trigger** for tool-using LLM agents.
+`/deep` is an explicit **meta-research trigger** for tool-using LLM agents.
 
-It does not run a fixed "deep research" pipeline. Instead, it turns the host agent, whether Claude Code, Codex, or another tool-using agent, into the **Organizer** of a bounded, stateful research session over a portfolio of workers: cheap lookups, academic search, deep-research APIs, and file-only processors.
+It activates only when the user explicitly invokes `/deep`. It does not run a fixed "deep research" pipeline. Instead, it turns the host agent, whether Claude Code, Codex, or another tool-using agent, into the **Organizer** of a bounded, stateful research session over a portfolio of workers: cheap lookups, academic search, deep-research APIs, and file-only processors.
 
 The goal is simple: **maximize information gain per dollar** while keeping claims traceable, conflicts visible, and expensive calls reserved for the places where they actually reduce uncertainty.
 
@@ -57,7 +57,7 @@ flowchart TD
 
 ## Research Contract
 
-Each session is steered by three independent axes. Presets are shortcuts, not hard-coded budgets.
+Every `/deep` session asks the user to confirm three independent axes. The Organizer should infer a recommended preset from context, but it should not spend on workers until the contract is confirmed. Presets are shortcuts, not hard-coded budgets.
 
 | Axis | Options |
 |---|---|
