@@ -65,6 +65,35 @@ def load_dotenv_if_available() -> bool:
     return True
 
 
+def scan_pending_jobs() -> list:
+    """已提交未收割的 async job（讀 cwd ledgers，不打網路）— 開 session 先收割再花新錢。
+    配對邏輯與 deep_research.py scan_pending 一致：submitted / 非終局 failed / interrupted
+    = pending；completed 或 terminal failed = cleared。"""
+    state = {}
+    for ledger in sorted(REPORTS_DIR.glob("*.ledger.jsonl")):
+        try:
+            lines = ledger.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            token = rec.get("resume")
+            if not token:
+                continue
+            if rec.get("event") == "completed" or (rec.get("event") == "failed" and rec.get("terminal")):
+                state[token] = ("cleared", str(ledger))
+            elif state.get(token, ("",))[0] != "cleared":
+                state[token] = ("pending", str(ledger))
+    return [{"resume": token, "ledger": path}
+            for token, (status, path) in state.items() if status == "pending"]
+
+
 def check_reports_dir() -> dict:
     try:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -139,6 +168,7 @@ def build_report() -> dict:
         "dotenv_loaded": dotenv_loaded,
         "packages": packages,
         "providers": providers,
+        "pending_async_jobs": scan_pending_jobs(),
         "next_smoke_test": (
             'python scripts/deep_research.py --provider demo '
             '--ledger reports/deep_state_demo.ledger.jsonl "smoke test"'
@@ -176,6 +206,12 @@ def print_human(report: dict):
             print(f"  missing keys: {', '.join(item['missing_keys'])}")
         if item["missing_optional_keys"]:
             print(f"  optional key not set: {', '.join(item['missing_optional_keys'])}")
+
+    pending = report["pending_async_jobs"]
+    if pending:
+        print("\nPending async jobs (submitted, not harvested — resume before new spend)")
+        for job in pending:
+            print(f"WARN {job['resume']}  ({job['ledger']})")
 
     print("\nNext")
     print(report["next_smoke_test"])

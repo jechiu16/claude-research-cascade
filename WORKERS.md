@@ -15,7 +15,13 @@ The bundled worker CLI is `scripts/deep_research.py`.
 - Stderr is progress only, including `[deep] ...` lines and early resume tokens.
 - Reports land in `<cwd>/reports/`.
 - Keys resolve: process env -> nearest `.env` from cwd upward -> `.env` beside this file.
-- If `--ledger reports/deep_state_<slug>.ledger.jsonl` is passed, the CLI appends completion/failure records with provider, cost, wall time, artifact path, and resume token when available.
+- If `--ledger reports/deep_state_<slug>.ledger.jsonl` is passed, the CLI appends event records (`submitted` / `completed` / `failed` / `interrupted`) with provider, cost, wall time, artifact path, and resume token when available.
+- Async submissions are journaled at submission time (`event: submitted`), so a killed process never loses a paid resume token.
+- `--submit-only` submits an async job (perplexity/openai/gemini), prints `{submitted, resume}`, and exits — fire several engines in one wave, then harvest each with `--resume`.
+- `--list-pending` scans ledgers for submitted-but-unharvested async jobs and prints their resume tokens; free, no network.
+- If extraction of a completed job fails (provider schema drift), the raw payload is saved to `reports/deep_raw_*.json` before the error is raised — paid content is never dropped, and `--resume` re-harvests after a fix at no extra cost.
+- Ctrl-C / SIGINT during a poll still emits `{"error": "interrupted", "resume": token}` and journals the event.
+- `sonar` retries transient transport/429/5xx failures (the duplicate-billing risk is about a cent); deep-engine submit POSTs never auto-retry — a duplicate submission is a duplicate full charge.
 
 Example commands use bare `python` for clarity. Host bindings decide the actual interpreter and absolute path.
 
@@ -43,6 +49,8 @@ Example commands use bare `python` for clarity. Host bindings decide the actual 
 - Use `sonar` or host search/fetch for narrow facts, source-of-record checks, and verification-floor spot checks.
 - Use deep engines only when cheap evidence cannot satisfy the contract's independence or strictness bar.
 - Use `deepseek` only to process already-fetched material; never treat it as a retrieval source.
+- High cross-engine agreement is not automatically independence: engines crawl the same web. On recent or contested topics, check whether the agreeing sources share one upstream origin.
+- If the topic is region- or language-bound, send at least one probe in that language; English-only queries systematically miss local sources.
 
 ## Parallelism
 
@@ -53,6 +61,7 @@ Good parallel waves:
 - `cascade` plus one `scholar` keyword query when broad orientation and literature context are both useful.
 - several `sonar` probes for unrelated gaps, within provider limits.
 - one deep engine plus targeted host/sonar verification work.
+- a `decision` wave: `--submit-only` two or three deep engines from different index families in one batch, verify cheap claims while they run, then harvest each token with `--resume`.
 
 Do not parallelize:
 
@@ -67,6 +76,8 @@ Do not parallelize:
 | Missing key | Name the missing env var, use available workers or host search/fetch, and record the substitution. |
 | Worker fails before submission | Record the failure, fall back to a host-native equivalent or another worker, and write `reports/host_fallback_<slug>.md`. |
 | Paid async job times out or poll dies | Resume with `--resume "provider:id"`; never re-submit paid work while a resume token exists. |
+| Host session died mid-run | Run `--list-pending` (also shown by `doctor.py`); harvest every pending token with `--resume` before paying for anything new. |
+| Extraction failed on a completed job | The raw payload is already in `reports/deep_raw_*.json`; read it directly or `--resume` after fixing — the money is not lost. |
 | Citations are missing or weak | Mark the claim `single-source` or `unverified`; do not launder model prose into evidence. |
 | Sources conflict | Mark the item `disputed`, write what evidence would settle it, and spend only if it is load-bearing. |
 | Host-native retrieval satisfies the contract | Use it; evidence quality beats tool loyalty. Note the substitution in state/log. |

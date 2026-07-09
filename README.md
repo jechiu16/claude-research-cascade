@@ -37,8 +37,9 @@ Most deep-research workflows are single-engine, one-shot, and hard to audit. Thi
 | [SKILL.md](SKILL.md) | Claude Code binding. Registers `/deep` and maps harness primitives to Claude Code tools. |
 | [AGENTS.md](AGENTS.md) | Codex binding. Explains discovery, install wiring, and Codex-native operating rules. |
 | [scripts/deep_research.py](scripts/deep_research.py) | Bundled worker CLI. One call, one action, resumable where supported, JSON on stdout. |
-| [scripts/doctor.py](scripts/doctor.py) | Local readiness check for Python, packages, keys, provider availability, and writable reports. |
+| [scripts/doctor.py](scripts/doctor.py) | Local readiness check for Python, packages, keys, provider availability, writable reports, and unharvested async jobs. |
 | [scripts/validate_transcripts.py](scripts/validate_transcripts.py) | Structural validator for golden `/deep` transcripts. |
+| [scripts/validate_state.py](scripts/validate_state.py) | Artifact gate for real sessions: contract axes, evidence statuses, spend-vs-ledger reconciliation, pending jobs. |
 | [examples/quickstart](examples/quickstart) | Sample state, ledger, and report artifacts from the no-network demo path. |
 | [examples/transcripts](examples/transcripts) | Golden transcripts for quick fact, literature review, and decision-critical runs. |
 | [requirements.txt](requirements.txt) | Common Python dependencies for network workers and `.env` loading. |
@@ -217,7 +218,10 @@ python scripts/validate_transcripts.py
 "$PY" scripts/deep_research.py "standard research question"
 "$PY" scripts/deep_research.py --provider openai --effort high "decision-critical question"
 "$PY" scripts/deep_research.py --provider deepseek --files a.md --files b.md "merge into a claims table"
+"$PY" scripts/deep_research.py --provider openai --submit-only "fire-and-return; harvest later"
 "$PY" scripts/deep_research.py --resume "openai:resp_abc123"
+"$PY" scripts/deep_research.py --list-pending
+"$PY" scripts/validate_state.py reports/deep_state_20260709_topic.md
 ```
 
 Output contract:
@@ -246,6 +250,9 @@ For medium-depth and deeper sessions, pass a ledger path so the worker appends m
 - OpenAI deep-research models require a verified organization.
 - Gemini uses the Interactions API `steps` schema targeted by the worker and requires `google-genai`.
 - Failed async polls return JSON with `error` and `resume`; organizers should resume rather than re-pay for submitted work.
+- With `--ledger`, async submissions are journaled at submission time (`event: submitted`), so a killed process never loses a paid resume token; `--list-pending` (and `doctor.py`) list unharvested jobs.
+- `--submit-only` fires an async engine and returns immediately — submit several engines in one wave, verify cheap claims while they run, then `--resume` each token.
+- If extraction of a completed job fails, the raw provider payload is saved to `reports/deep_raw_*.json` first — paid content survives schema drift, and `--resume` re-harvests after a fix at no extra cost.
 - Report filenames include a short hash of `query + pid` so parallel probes and CJK-only queries do not overwrite one another.
 - Final deliveries are handoff-oriented: include the contract, evidence status, verification checks, spend, artifacts, and next inspection points.
 

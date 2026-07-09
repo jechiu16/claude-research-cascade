@@ -61,38 +61,42 @@ hypothesis: <best answer so far; provisional until verified>
 next action: <one sentence: cheapest uncertainty reducer>
 spend: running total $X.XX; ledger=<path>
 claims: <id | claim | why it matters | status | next check>
-evidence: <id | claim | status | sources | independence>
+evidence: <id | claim | status | sources | independence | as-of>
 open: gaps=<...>; disputes=<...>
 log: <n>: chose <batch> because <one line>
 ```
 
 Statuses: `corroborated`, `single-source`, `corroborated-same-family`, `disputed`, `retired`, `unverified`.
 
+`as-of` is the evidence vintage: publication or retrieval date. Date-sensitive claims (prices, policies, versions, availability) must carry it; a stale source does not clear the bar on a volatile topic.
+
 ## Organizer Loop
 
 **0 INIT** - Infer the target from conversation context. Ask up to three clarifying questions only if the answer would change the plan. Ask the three-axis contract every time and record it.
 
-**1 INSPECT** - Read the state and recent `reports/` artifacts on overlapping topics. Reuse old paid reports only if their age and scope still fit the question.
+**1 INSPECT** - Read the state and recent `reports/` artifacts on overlapping topics. Reuse old paid reports only if their age and scope still fit the question. If a ledger exists, check for unharvested async submissions (`--list-pending`) and harvest them before paying for anything new.
 
 **2 CHOOSE** - Pick the next batch with the best expected information gain per dollar. Use free reasoning over the current pool first, targeted lookups next, broad paid retrieval last. Read [WORKERS.md](WORKERS.md) when selecting or invoking workers.
 
 Branch types:
 
 - **shared**: builds on the current evidence pool.
-- **isolated**: blind verification from the template `Verify or refute: <claim verbatim>. What is the primary evidence for and against?`
+- **isolated**: blind verification. Prefer architectural isolation when the host supports it: a fresh-context agent that receives only the claim verbatim — no state file, no evidence pool, no current hypothesis. Fallback where fresh contexts are unavailable: the query template `Verify or refute: <claim verbatim>. What is the primary evidence for and against?`
 - **targeted**: narrow lookup for a specific gap or dispute.
 
 **3 EXECUTE** - Run parallel-safe actions in one wave. Avoid micro-looping one worker at a time. Keep resume tokens. If the first wave gives a useful provisional answer, share it as provisional while deeper actions continue.
 
 **4 NORMALIZE** - Extract verdict-relevant claims from each artifact with provenance. Use a processor only for already-fetched material; curate its output.
 
-**5 RECONCILE** - Compare claims across sources. Same-family agreement does not clear a cross-family independence bar. Promote conflicts to `disputed` and write what would settle them. Update the state.
+**5 RECONCILE** - Compare claims across sources. Same-family agreement does not clear a cross-family independence bar. Unanimous cross-engine agreement on a recent or contested topic is itself a signal: engines crawl the same web, so check whether the agreeing sources trace to one upstream origin before counting them as independent. Promote conflicts to `disputed` and write what would settle them. Update the state.
 
-**6 TERMINATE?** - Stop when load-bearing claims meet the contract, or when marginal gain is clearly below marginal cost, or when further spend exceeds the contract without a strong reason. If justified overspend would be large, check in with the user.
+**6 TERMINATE?** - Stop when load-bearing claims meet the contract, or when marginal gain is clearly below marginal cost, or when further spend exceeds the contract without a strong reason. If justified overspend would be large, check in with the user. At `decision` strictness, weigh marginal spend against the cost of a wrong recommendation, not against dollars already spent — frugality is the default posture, not the point of a decision run.
 
 ## Verification Floor
 
 Before delivery, independently spot-check the two or three most load-bearing claims: headline numbers, dates, official limits, or claims that would change the recommendation if wrong. Prefer host search/fetch when available; otherwise use a narrow worker probe. If verification is unavailable, say so plainly.
+
+For `decision` runs, add one adversarial pass in a fresh context: `Argue that this recommendation is wrong: <recommendation + key evidence>`. The Organizer that formed the hypothesis should not be its only judge; a surviving recommendation is stronger, a broken one just saved the user from it.
 
 ## Delivery
 

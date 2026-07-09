@@ -14,11 +14,20 @@ Providers:
 Usage:
   python deep_research.py [--provider P] [--effort E] [--model M] [--timeout-min N] [--ledger FILE] "question"
   python deep_research.py --provider deepseek --files r1.md --files r2.md "merge these into a claims table"
+  python deep_research.py --provider openai --submit-only "question"   # fire-and-return; harvest later
   python deep_research.py --resume "openai:resp_abc123"
+  python deep_research.py --list-pending [--ledger FILE]               # unharvested async jobs
 
 Output: single JSON object on stdout:
   {query, provider, model, effort, report_path, report, usage, cost_estimate_usd, wall_time_s}
 Progress and the resume token go to stderr. Reports are saved to <cwd>/reports/.
+
+Durability contract:
+  - With --ledger, async submissions are journaled at submission time (event=submitted),
+    so a killed process never loses a paid resume token.
+  - If extraction of a completed job fails, the raw provider payload is saved to
+    reports/deep_raw_*.json before the error is raised.
+  - Ctrl-C / SIGINT during a poll still emits {"error": "interrupted", "resume": token}.
 
 API keys (first hit wins): process env > nearest .env from cwd upward > <skill>/.env
 """
@@ -35,16 +44,25 @@ from datetime import datetime
 from pathlib import Path
 
 def _fix_console_encoding():
-    """Windows cp950 等 console 的 UTF-8 包裝 — 只在 CLI 模式呼叫，import 無副作用。"""
+    """Windows cp950 等 console 的 UTF-8 包裝 — 只在 CLI 模式呼叫，import 無副作用。
+    line_buffering=True：stderr 被 redirect 到檔案（背景執行）時，進度與 resume token
+    仍即時落盤，不滯留 buffer。"""
     for name in ("stdout", "stderr"):
         s = getattr(sys, name)
         if s and hasattr(s, "buffer"):
-            setattr(sys, name, io.TextIOWrapper(s.buffer, encoding="utf-8", errors="replace"))
+            setattr(sys, name, io.TextIOWrapper(s.buffer, encoding="utf-8", errors="replace",
+                                                line_buffering=True))
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 PPLX_BASE = "https://api.perplexity.ai"
 OPENAI_BASE = "https://api.openai.com"
+
+# 跨層共享的 run 狀態：ledger 路徑（main 設定）與當前 async job 的 resume token
+# （submit/resume 時設定）。放模組層是為了讓 KeyboardInterrupt handler 與
+# submitted-event journaling 在任何深度都拿得到 token — 錢已付，token 不能丟。
+_LEDGER_PATH = None
+_CURRENT_RESUME = None
 
 # USD per 1M tokens (input, output); web search $10 per 1k calls. OpenAI returns no
 # cost field, so this is an estimate — Perplexity responses carry their own total_cost.
@@ -109,12 +127,94 @@ def _get_with_retries(url: str, *, headers=None, params=None, timeout=30,
     raise RuntimeError(f"{label} retry loop exhausted")
 
 
-class JobError(RuntimeError):
-    """已提交、可續跑的 job 出錯 — resume token 隨錯誤結構化帶出，避免重付。"""
+def _post_with_retries(url: str, *, headers=None, json_body=None, timeout=120,
+                       attempts=3, base_delay=1.0, label="POST"):
+    """僅限低價同步呼叫（sonar ~$0.01）：transport / 429 / 5xx 重試的重複計費風險以
+    美分計，換不丟內容划算。深度引擎的 submit POST 不走這裡 — 重複提交 = 重複整筆研究費。"""
+    import requests
 
-    def __init__(self, message: str, resume: str = None):
+    for attempt in range(1, attempts + 1):
+        try:
+            r = requests.post(url, headers=headers, json=json_body, timeout=timeout)
+        except requests.RequestException as e:
+            if attempt == attempts:
+                raise
+            delay = min(base_delay * (2 ** (attempt - 1)), 30.0)
+            _log(f"{label} transport error: {e}; retry in {delay:.1f}s ({attempt}/{attempts})")
+            time.sleep(delay)
+            continue
+        if r.status_code not in RETRY_GET_STATUSES or attempt == attempts:
+            return r
+        delay = _retry_delay(r.headers, attempt, base_delay)
+        _log(f"{label} HTTP {r.status_code}; retry in {delay:.1f}s ({attempt}/{attempts})")
+        time.sleep(delay)
+    raise RuntimeError(f"{label} retry loop exhausted")
+
+
+class JobError(RuntimeError):
+    """已提交、可續跑的 job 出錯 — resume token 隨錯誤結構化帶出，避免重付。
+    terminal=True 表示 provider 端已終局（failed/cancelled/incomplete），resume 只供診斷；
+    terminal=False（timeout / transport / 抽取失敗）表示 job 仍可收割。"""
+
+    def __init__(self, message: str, resume: str = None, terminal: bool = False):
         super().__init__(message)
         self.resume = resume
+        self.terminal = terminal
+
+
+def _ledger_event(record: dict):
+    """journaling 便門：main 設好 _LEDGER_PATH 後，任何深度都能落一筆事件。"""
+    if _LEDGER_PATH:
+        _append_ledger(_LEDGER_PATH, record)
+
+
+def _mark_submitted(provider: str, rid: str, query: str = None, model: str = None,
+                    effort: str = None) -> str:
+    """async 提交成功的當下就落帳（event=submitted）— process 之後被殺，token 仍在帳本。"""
+    global _CURRENT_RESUME
+    token = f"{provider}:{rid}"
+    _CURRENT_RESUME = token
+    _log(f"resume token: {token}")
+    rec = {"event": "submitted", "provider": provider, "resume": token}
+    if model:
+        rec["model"] = model
+    if effort:
+        rec["effort"] = effort
+    if query:
+        rec["query"] = query[:200]
+    _ledger_event(rec)
+    return token
+
+
+def _save_raw(provider: str, rid: str, payload) -> Path:
+    """已付費 payload 的最後防線：extract 崩掉前先把原始回應落盤。"""
+    reports_dir = Path.cwd() / "reports"
+    reports_dir.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_rid = re.sub(r"[^A-Za-z0-9_-]+", "-", rid)[:32]
+    path = reports_dir / f"deep_raw_{provider}_{ts}_{safe_rid}.json"
+    try:
+        text = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+    except TypeError:
+        dump = getattr(payload, "model_dump", None) or getattr(payload, "to_dict", None)
+        try:
+            text = json.dumps(dump(), ensure_ascii=False, indent=2, default=str) if dump else repr(payload)
+        except Exception:
+            text = repr(payload)
+    path.write_text(text, encoding="utf-8")
+    _log(f"原始 payload 已存：{path}")
+    return path
+
+
+def _extract_guard(extract, data, provider: str, rid: str):
+    """completed job 的抽取失敗（schema 漂移等）≠ 內容損失：raw 落盤後帶 token 拋錯，
+    修好 extract 後 --resume 重收割（completed job 重 poll 立即返回，零額外成本）。"""
+    try:
+        return extract(data)
+    except Exception as e:
+        raw = _save_raw(provider, rid, data)
+        raise JobError(f"抽取失敗（原始 payload 已存 {raw}）：{e}",
+                       resume=f"{provider}:{rid}")
 
 
 # ── Perplexity ────────────────────────────────────────────────────────────────
@@ -161,14 +261,14 @@ def _pplx_poll(request_id: str, timeout_min: float) -> dict:
         if status == "COMPLETED":
             return data
         if status == "FAILED":
-            raise JobError(f"研究失敗：{data.get('error_message', '（無錯誤訊息）')}", resume=token)
+            raise JobError(f"研究失敗：{data.get('error_message', '（無錯誤訊息）')}",
+                           resume=token, terminal=True)
         time.sleep(15)
 
 
-def call_perplexity(query: str, effort: str, model, timeout_min, files=None) -> dict:
+def _pplx_submit(query: str, effort: str, model: str) -> str:
     import requests
 
-    model = model or "sonar-deep-research"
     payload = {"request": {"model": model,
                            "messages": [{"role": "user", "content": query}],
                            "reasoning_effort": effort}}
@@ -177,20 +277,24 @@ def call_perplexity(query: str, effort: str, model, timeout_min, files=None) -> 
     if r.status_code != 200:
         raise RuntimeError(f"submit 失敗 HTTP {r.status_code}: {r.text[:300]}")
     request_id = r.json()["id"]
-    _log(f"resume token: perplexity:{request_id}")
+    _mark_submitted("perplexity", request_id, query=query, model=model, effort=effort)
+    return request_id
+
+
+def call_perplexity(query: str, effort: str, model, timeout_min, files=None) -> dict:
+    model = model or "sonar-deep-research"
+    request_id = _pplx_submit(query, effort, model)
     data = _pplx_poll(request_id, timeout_min or 20)
-    return _pplx_extract(data, model, effort)
+    return _extract_guard(lambda d: _pplx_extract(d, model, effort), data, "perplexity", request_id)
 
 
 def call_sonar(query: str, effort: str, model, timeout_min, files=None) -> dict:
     """Quick tier — synchronous grounded answer, no polling."""
-    import requests
-
     model = model or "sonar-pro"
     _log(f"快查（{model}）")
-    r = requests.post(f"{PPLX_BASE}/chat/completions", headers=_pplx_headers(),
-                      json={"model": model, "messages": [{"role": "user", "content": query}]},
-                      timeout=120)
+    r = _post_with_retries(f"{PPLX_BASE}/chat/completions", headers=_pplx_headers(),
+                           json_body={"model": model, "messages": [{"role": "user", "content": query}]},
+                           timeout=120, attempts=3, base_delay=1.0, label="sonar")
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:300]}")
     data = r.json()
@@ -371,15 +475,18 @@ def _openai_poll(resp_id: str, timeout_min: float) -> dict:
             return data
         if status in ("failed", "cancelled", "incomplete"):
             err = (data.get("error") or {}).get("message", "")
-            # incomplete 可能仍有部分產出，--resume 可撈回；failed/cancelled 帶 token 供診斷
-            raise JobError(f"研究失敗，狀態 {status}：{err[:300]}", resume=token)
+            if status == "incomplete":
+                # incomplete 是終局狀態但常帶部分產出 — 落盤保錢，不默默當完整結果交付
+                raw = _save_raw("openai", resp_id, data)
+                raise JobError(f"研究以 incomplete 收場（部分產出已存 {raw}）：{err[:300]}",
+                               resume=token, terminal=True)
+            raise JobError(f"研究失敗，狀態 {status}：{err[:300]}", resume=token, terminal=True)
         time.sleep(20)
 
 
-def call_openai(query: str, effort: str, model, timeout_min, files=None) -> dict:
+def _openai_submit(query: str, effort: str, model: str) -> str:
     import requests
 
-    model = model or ("o3-deep-research" if effort == "high" else "o4-mini-deep-research")
     body = {"model": model, "input": query, "background": True,
             "tools": [{"type": "web_search_preview"}]}
     cap = OPENAI_TOOL_CAP.get(effort)
@@ -390,9 +497,15 @@ def call_openai(query: str, effort: str, model, timeout_min, files=None) -> dict
     if r.status_code != 200:
         raise RuntimeError(f"submit 失敗 HTTP {r.status_code}: {r.text[:300]}")
     resp_id = r.json()["id"]
-    _log(f"resume token: openai:{resp_id}")
+    _mark_submitted("openai", resp_id, query=query, model=model, effort=effort)
+    return resp_id
+
+
+def call_openai(query: str, effort: str, model, timeout_min, files=None) -> dict:
+    model = model or ("o3-deep-research" if effort == "high" else "o4-mini-deep-research")
+    resp_id = _openai_submit(query, effort, model)
     data = _openai_poll(resp_id, timeout_min or 45)
-    return _openai_extract(data, model, effort)
+    return _extract_guard(lambda d: _openai_extract(d, model, effort), data, "openai", resp_id)
 
 
 # ── Gemini ────────────────────────────────────────────────────────────────────
@@ -416,7 +529,7 @@ def _gemini_poll(client, interaction_id: str, timeout_min: float):
         if status == "completed":
             return interaction
         if status in ("failed", "cancelled"):
-            raise JobError(f"研究失敗，狀態：{status}", resume=token)
+            raise JobError(f"研究失敗，狀態：{status}", resume=token, terminal=True)
         time.sleep(15)
 
 
@@ -451,16 +564,21 @@ def _gemini_extract(interaction, agent: str) -> dict:
             "usage": {}, "cost_estimate_usd": None, "sources": []}
 
 
+def _gemini_submit(client, query: str, agent: str) -> str:
+    _log(f"啟動研究（gemini/{agent}）")
+    interaction = client.interactions.create(input=query, agent=agent, background=True)
+    _mark_submitted("gemini", interaction.id, query=query, model=agent)
+    return interaction.id
+
+
 def call_gemini(query: str, effort: str, model, timeout_min, files=None) -> dict:
     # 呼叫方式與舊版相同（走 **body）；差別在輸出解析（steps schema，見 _gemini_extract）。
     # model 可選 deep-research-preview-04-2026（預設）或 deep-research-max-preview-04-2026。
     client = _gemini_client()
     agent = model or "deep-research-preview-04-2026"
-    _log(f"啟動研究（gemini/{agent}）")
-    interaction = client.interactions.create(input=query, agent=agent, background=True)
-    _log(f"resume token: gemini:{interaction.id}")
-    interaction = _gemini_poll(client, interaction.id, timeout_min or 30)
-    return _gemini_extract(interaction, agent)
+    interaction_id = _gemini_submit(client, query, agent)
+    interaction = _gemini_poll(client, interaction_id, timeout_min or 30)
+    return _extract_guard(lambda d: _gemini_extract(d, agent), interaction, "gemini", interaction_id)
 
 
 # ── DeepSeek（加工層，不是研究引擎：無檢索、裸答事實幻覺率高）────────────────
@@ -567,13 +685,18 @@ def save_report(provider: str, query: str, result: dict, wall_time_s: float) -> 
 
 
 def _finish(provider: str, query: str, result: dict, wall_time_s: float) -> dict:
-    report_path = save_report(provider, query, result, wall_time_s)
+    try:
+        report_path = str(save_report(provider, query, result, wall_time_s))
+    except OSError as e:
+        # 存檔失敗 ≠ 內容損失：report 全文仍走 stdout JSON 交給 host
+        _log(f"報告存檔失敗（內容仍在 stdout JSON）：{e}")
+        report_path = None
     return {
         "query": query,
         "provider": provider,
         "model": result["model"],
         "effort": result.get("effort"),
-        "report_path": str(report_path),
+        "report_path": report_path,
         "report": result["report_text"],
         "usage": result.get("usage", {}),
         "cost_estimate_usd": result.get("cost_estimate_usd"),
@@ -600,26 +723,79 @@ def run(provider: str, query: str, effort: str, model, timeout_min, files=None) 
     return _finish(provider, query, result, time.monotonic() - t0)
 
 
+ASYNC_PROVIDERS = ("perplexity", "openai", "gemini")
+
+
+def run_submit_only(provider: str, query: str, effort: str, model) -> dict:
+    """提交即返回 — 多引擎 decision wave 的並行原語：一輪 --submit-only 齊發，
+    再逐一 --resume 收割。submitted 事件已由 _mark_submitted 落帳。"""
+    if provider == "perplexity":
+        model = model or "sonar-deep-research"
+        rid = _pplx_submit(query, effort, model)
+    elif provider == "openai":
+        model = model or ("o3-deep-research" if effort == "high" else "o4-mini-deep-research")
+        rid = _openai_submit(query, effort, model)
+    elif provider == "gemini":
+        model = model or "deep-research-preview-04-2026"
+        rid = _gemini_submit(_gemini_client(), query, model)
+    else:
+        raise RuntimeError(f"--submit-only 只支援 async providers（{'/'.join(ASYNC_PROVIDERS)}），"
+                           f"收到：{provider}")
+    token = f"{provider}:{rid}"
+    return {"submitted": True, "provider": provider, "model": model, "effort": effort,
+            "resume": token, "query": query, "next": f'--resume "{token}"'}
+
+
 def run_resume(token: str, timeout_min) -> dict:
+    global _CURRENT_RESUME
     provider, _, rid = token.partition(":")
     if not rid:
         raise RuntimeError(f'--resume 格式是 "provider:id"，收到：{token}')
+    _CURRENT_RESUME = token
     t0 = time.monotonic()
     if provider == "perplexity":
         data = _pplx_poll(rid, timeout_min or 20)
         model = (data.get("response") or {}).get("model") or "sonar-deep-research"
-        result = _pplx_extract(data, model, None)
+        result = _extract_guard(lambda d: _pplx_extract(d, model, None), data, provider, rid)
     elif provider == "openai":
         data = _openai_poll(rid, timeout_min or 45)
-        result = _openai_extract(data, data.get("model", "?"), None)
+        result = _extract_guard(lambda d: _openai_extract(d, d.get("model", "?"), None), data, provider, rid)
     elif provider == "gemini":
         client = _gemini_client()
         interaction = _gemini_poll(client, rid, timeout_min or 30)
         agent = getattr(interaction, "agent", None) or "deep-research-preview-04-2026"
-        result = _gemini_extract(interaction, agent)
+        result = _extract_guard(lambda d: _gemini_extract(d, agent), interaction, provider, rid)
     else:
         raise RuntimeError(f"provider {provider} 不支援 resume（sonar / scholar / deepseek 為同步呼叫）")
     return _finish(provider, f"[resumed] {token}", result, time.monotonic() - t0)
+
+
+def scan_pending(ledger_paths) -> list:
+    """從帳本找『已提交未收割』的 async job。submitted / 非終局 failed / interrupted = pending；
+    completed 或 terminal failed = cleared。逐行解析、容忍殘行（帳本契約如此）。"""
+    state = {}
+    for path in ledger_paths:
+        try:
+            lines = Path(path).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            token = rec.get("resume")
+            if not token:
+                continue
+            if rec.get("event") == "completed" or (rec.get("event") == "failed" and rec.get("terminal")):
+                state[token] = ("cleared", rec, str(path))
+            elif state.get(token, ("",))[0] != "cleared":
+                state[token] = ("pending", rec, str(path))
+    return [{"resume": token, "ledger": path, "last_event": rec}
+            for token, (status, rec, path) in state.items() if status == "pending"]
 
 
 if __name__ == "__main__":
@@ -631,6 +807,10 @@ if __name__ == "__main__":
     parser.add_argument("--model", default=None, help="覆寫該 provider 的預設 model")
     parser.add_argument("--timeout-min", type=float, default=None, help="輪詢上限（分鐘）")
     parser.add_argument("--resume", default=None, metavar="PROVIDER:ID", help="接手先前的 async job")
+    parser.add_argument("--submit-only", action="store_true",
+                        help="async provider 提交即返回（印 resume token），不輪詢 — 多引擎並行 wave 用")
+    parser.add_argument("--list-pending", action="store_true",
+                        help="掃描帳本列出已提交未收割的 async job（不打網路、不花錢）")
     parser.add_argument("--files", action="append", default=None, metavar="FILE",
                         help="deepseek 加工層的檔案輸入（一面旗一個檔，可重複）")
     parser.add_argument("--ledger", default=None, metavar="FILE",
@@ -638,34 +818,58 @@ if __name__ == "__main__":
     parser.add_argument("query", nargs="*", help="研究問題")
     args = parser.parse_args()
 
+    if args.list_pending:
+        paths = [args.ledger] if args.ledger else sorted(Path.cwd().glob("reports/*.ledger.jsonl"))
+        pending = scan_pending(paths)
+        print(json.dumps({"pending": pending, "scanned": [str(p) for p in paths]},
+                         ensure_ascii=False, indent=2))
+        sys.exit(0)
+    if args.submit_only and args.resume:
+        parser.error("--submit-only 與 --resume 互斥（一個是提交、一個是收割）")
     if not args.resume and not args.query:
-        parser.error("需要 query（或 --resume）")
+        parser.error("需要 query（或 --resume / --list-pending）")
     if args.files and args.provider != "deepseek":
         parser.error("--files 只支援 --provider deepseek（加工層）— 其他 provider 會默默忽略檔案")
 
     _load_env()
+    _LEDGER_PATH = args.ledger  # module-scope：submitted / interrupted 事件從任何深度落帳
     try:
-        if args.resume:
+        if args.submit_only:
+            out = run_submit_only(args.provider, " ".join(args.query), args.effort, args.model)
+        elif args.resume:
             out = run_resume(args.resume, args.timeout_min)
         else:
             out = run(args.provider, " ".join(args.query), args.effort, args.model, args.timeout_min, files=args.files)
-        if args.ledger:
-            _append_ledger(args.ledger, {"provider": out["provider"], "model": out["model"],
-                                         "effort": out.get("effort"), "cost_usd": out.get("cost_estimate_usd"),
-                                         "wall_s": out.get("wall_time_s"), "artifact": out.get("report_path"),
-                                         "query": out["query"][:200]})
+        if args.ledger and not out.get("submitted"):
+            rec = {"event": "completed", "provider": out["provider"], "model": out["model"],
+                   "effort": out.get("effort"), "cost_usd": out.get("cost_estimate_usd"),
+                   "wall_s": out.get("wall_time_s"), "artifact": out.get("report_path"),
+                   "query": out["query"][:200]}
+            if _CURRENT_RESUME:
+                rec["resume"] = _CURRENT_RESUME  # 讓 --list-pending 能配對清掉這筆
+            _append_ledger(args.ledger, rec)
         print(json.dumps(out, ensure_ascii=False, indent=2))
+    except KeyboardInterrupt:
+        token = _CURRENT_RESUME
+        _ledger_event({"event": "interrupted",
+                       "provider": (token or "").split(":")[0] or args.provider, "resume": token})
+        print(json.dumps({"error": "interrupted", "resume": token}, ensure_ascii=False))
+        sys.exit(130)
     except JobError as e:
         # provider 從 resume token 前綴取（--resume 未帶 --provider 時 args.provider 是 default）
         led_prov = (e.resume or args.resume or "").split(":")[0] or args.provider
         if args.ledger:
-            _append_ledger(args.ledger, {"provider": led_prov, "error": str(e)[:300], "resume": e.resume})
+            _append_ledger(args.ledger, {"event": "failed", "provider": led_prov,
+                                         "error": str(e)[:300], "resume": e.resume,
+                                         "terminal": e.terminal})
         # 失敗也印 stdout（成功/失敗一致走 stdout；host 讀 stdout 拿 JSON，exit code 非零標示失敗）
-        print(json.dumps({"error": str(e), "resume": e.resume}, ensure_ascii=False))
+        print(json.dumps({"error": str(e), "resume": e.resume, "terminal": e.terminal},
+                         ensure_ascii=False))
         sys.exit(1)
     except Exception as e:
         led_prov = (args.resume or "").split(":")[0] or args.provider
         if args.ledger:
-            _append_ledger(args.ledger, {"provider": led_prov, "error": str(e)[:300]})
+            _append_ledger(args.ledger, {"event": "failed", "provider": led_prov,
+                                         "error": str(e)[:300], "terminal": True})
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
         sys.exit(1)

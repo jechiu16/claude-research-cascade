@@ -30,15 +30,20 @@ Use this before spending. It is a memory aid, not a replacement for [HARNESS.md]
 | `$PY` | project venv if present (`.venv/Scripts/python.exe` on Windows, `.venv/bin/python` on POSIX), else `python3` |
 | async worker | same Bash call with background execution; keep the resume token printed to stderr |
 | parallel batch | independent Bash calls in one message |
+| parallel deep wave | `--submit-only` each engine in one message, do cheap verification while they run, then `--resume` each token |
+| isolated blind check | spawn a fresh subagent (Agent tool) whose prompt contains only the claim verbatim — it must not receive or read the state file, the evidence pool, or the current hypothesis |
 | host search/fetch | `WebSearch` / `WebFetch` |
 | Research State | write/edit `reports/deep_state_<yyyymmdd>_<slug>.md` in the cwd |
 | ledger | pass `--ledger reports/deep_state_<slug>.ledger.jsonl` from `medium` depth up |
-| language | respond in the user's language; write worker queries in English |
+| artifact gate | before delivery from `medium` up: `"$PY" ~/.claude/skills/deep/scripts/validate_state.py <state> --ledger <ledger>`; fix FAILs, report WARNs honestly in delivery |
+| language | respond in the user's language; write worker queries in English (plus one native-language probe when the topic is region-bound) |
 
 ## Operational Notes
 
 - Missing key: name the env var (`PERPLEXITY_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`; `S2_API_KEY` optional) and both `.env` locations.
 - Framing: infer the research target from context; ask clarifiers only when a missing premise changes scope, worker choice, cost, or answer.
-- Mandatory contract: ask one card every `/deep`. Recommend `fast`, `standard`, or `decision`, and spell out the three axis values in each option. Let `Other` set the axes individually.
+- Mandatory contract: ask one card every `/deep`. Recommend `fast`, `standard`, or `decision`, and spell out the three axis values in each option. Include the estimated spend range and the intended first wave in each option — the user pulls the trigger with the price and the plan visible. Let `Other` set the axes individually.
+- Harvest before you buy: at INSPECT, if `reports/*.ledger.jsonl` exists, run `--list-pending` and `--resume` any pending token before new spend. `doctor.py` also surfaces these.
+- Reuse before you buy: `reports/` accumulates paid artifacts; `ls -t reports/deep_*.md` plus a topic grep before re-purchasing research that may already exist.
 - Privacy pause: before using `deepseek --files` or any external worker on local/user files, confirm the files are safe to send or redact/summarize first.
 - Async polling caps: Perplexity 20 min, OpenAI 45 min, Gemini 30 min (`--timeout-min` overrides). On timeout, recover with `--resume`; never re-pay while a resume token exists.

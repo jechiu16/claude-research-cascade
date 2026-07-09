@@ -37,8 +37,9 @@
 | [SKILL.md](SKILL.md) | Claude Code binding。註冊 `/deep` 並把 harness primitive 對應到 Claude Code 工具。 |
 | [AGENTS.md](AGENTS.md) | Codex binding。說明 discovery、安裝接線方式與 Codex 的操作規則。 |
 | [scripts/deep_research.py](scripts/deep_research.py) | 內建 worker CLI。一次呼叫就是一次 action；支援可恢復任務；stdout 輸出 JSON。 |
-| [scripts/doctor.py](scripts/doctor.py) | 本機 readiness check：Python、套件、API keys、provider availability、reports 可寫性。 |
+| [scripts/doctor.py](scripts/doctor.py) | 本機 readiness check：Python、套件、API keys、provider availability、reports 可寫性、未收割 async jobs。 |
 | [scripts/validate_transcripts.py](scripts/validate_transcripts.py) | Golden `/deep` transcripts 的結構驗證器。 |
+| [scripts/validate_state.py](scripts/validate_state.py) | 真實 session 的產物 gate：contract 三軸、evidence status、spend 對帳、pending jobs。 |
 | [examples/quickstart](examples/quickstart) | no-network demo path 產生的 sample state、ledger、report。 |
 | [examples/transcripts](examples/transcripts) | quick fact、literature review、decision-critical 三種 `/deep` golden transcripts。 |
 | [requirements.txt](requirements.txt) | Network workers 與 `.env` 載入所需的常用 Python dependencies。 |
@@ -217,7 +218,10 @@ python scripts/validate_transcripts.py
 "$PY" scripts/deep_research.py "standard research question"
 "$PY" scripts/deep_research.py --provider openai --effort high "decision-critical question"
 "$PY" scripts/deep_research.py --provider deepseek --files a.md --files b.md "merge into a claims table"
+"$PY" scripts/deep_research.py --provider openai --submit-only "提交即返回，稍後收割"
 "$PY" scripts/deep_research.py --resume "openai:resp_abc123"
+"$PY" scripts/deep_research.py --list-pending
+"$PY" scripts/validate_state.py reports/deep_state_20260709_topic.md
 ```
 
 輸出契約：
@@ -246,6 +250,9 @@ python scripts/validate_transcripts.py
 - OpenAI deep-research models 需要 verified organization。
 - Gemini 使用 worker 目標支援的 Interactions API `steps` schema，並需要 `google-genai`。
 - Async poll 失敗時會回傳含有 `error` 與 `resume` 的 JSON；Organizer 應該 resume，而不是重新付費提交。
+- 帶 `--ledger` 時，async 提交會在提交當下就落帳（`event: submitted`）— process 被殺也不會丟已付費的 resume token；`--list-pending`（以及 `doctor.py`）會列出未收割的 job。
+- `--submit-only` 提交即返回 — 一輪齊發多個引擎，趁它們跑的時候做便宜驗證，再逐一 `--resume` 收割。
+- Completed job 的抽取若失敗，原始 provider payload 會先存進 `reports/deep_raw_*.json` — 已付費內容不因 schema 漂移而蒸發，修好後 `--resume` 零成本重收割。
 - Report 檔名包含 `query + pid` 的短 hash，避免平行 probe 或純 CJK query 互相覆蓋。
 - 最終交付偏 handoff artifact：包含 contract、證據狀態、驗證檢查、花費、產物與下一步檢查點。
 

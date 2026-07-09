@@ -14,6 +14,7 @@ Read this when validating the skill, tuning behavior, or when the Organizer is u
 | `/deep with missing API keys` | Name missing keys, use available host-native tools or free workers, record substitutions in state/log. |
 | `/deep local files plus web context` | Pause before sending local files externally; prefer host-side extraction unless the user approves egress. |
 | Conflicting sources | Promote the claim to `disputed`, state what would settle it, and spend only if the dispute is load-bearing. |
+| Host session crashed mid-`/deep` | Run `--list-pending`, harvest pending tokens with `--resume`, reconcile the ledger, then continue under the same contract — never re-submit paid work. |
 
 ## Mini State Example
 
@@ -82,3 +83,6 @@ Pass condition: recommends `decision`, requires cross-family or source-of-record
 - Chasing every interesting question instead of load-bearing uncertainty.
 - Hiding missing keys, weak citations, or verification failures.
 - Sending local/user files to external workers without a privacy pause.
+- Re-submitting a paid async job while the ledger holds an unharvested resume token.
+- Treating unanimous cross-engine agreement as independence without checking for a shared upstream source.
+- Handing the blind-check agent the state file or current hypothesis — that is not blind.

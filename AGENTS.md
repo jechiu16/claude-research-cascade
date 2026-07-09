@@ -34,10 +34,13 @@ Below, `$DEEP_HARNESS_DIR` means the absolute path to this checkout.
 | run a worker | shell with absolute path: `python "$DEEP_HARNESS_DIR/scripts/deep_research.py" --provider <p> "QUERY"` |
 | async worker | run with generous timeout or background shell facility; keep stderr resume tokens |
 | parallel batch | concurrent shell calls when available; otherwise sequential is acceptable |
+| parallel deep wave | `--submit-only` each engine, then `--resume` each token — works even without concurrent shells |
+| isolated blind check | a fresh sub-session/exec whose prompt contains only the claim verbatim (no state file, no evidence pool); fallback: the verbatim template from HARNESS.md |
 | host search/fetch | native browsing if available; otherwise use `sonar` for narrow checks |
 | Research State | write `reports/deep_state_<yyyymmdd>_<slug>.md` in the session cwd |
 | ledger | pass `--ledger reports/deep_state_<slug>.ledger.jsonl` from `medium` depth up |
-| language | respond in the user's language; write worker queries in English |
+| artifact gate | before delivery from `medium` up: `python "$DEEP_HARNESS_DIR/scripts/validate_state.py" <state> --ledger <ledger>`; fix FAILs, report WARNs honestly |
+| language | respond in the user's language; write worker queries in English (plus one native-language probe when the topic is region-bound) |
 
 ## Operational Notes
 
@@ -48,5 +51,6 @@ Below, `$DEEP_HARNESS_DIR` means the absolute path to this checkout.
 - Privacy pause: before using `deepseek --files` or any external worker on local/user files, confirm the files are safe to send or redact/summarize first.
 - Restricted writes: write state, ledger, and reports under the session cwd or another host-sanctioned writable directory.
 - Network/proxy failures before submission are not resumable; record them and fall back per [WORKERS.md](WORKERS.md).
+- Harvest before you buy: at INSPECT, if `reports/*.ledger.jsonl` exists, run `--list-pending` and `--resume` any pending token before new spend.
 - Rate limits: Perplexity about 5 RPM; Semantic Scholar 1 req/s and never parallel.
 - Poll caps: Perplexity 20 min, OpenAI 45 min, Gemini 30 min (`--timeout-min` overrides).
