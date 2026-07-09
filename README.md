@@ -1,6 +1,6 @@
 # claude-research-cascade
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+**English** | [繁體中文](README.zh-TW.md)
 
 [![License: MIT](https://img.shields.io/github/license/jechiu16/claude-research-cascade?style=flat-square)](LICENSE)
 [![Host neutral](https://img.shields.io/badge/host-neutral-24292f?style=flat-square)](HARNESS.md)
@@ -20,11 +20,13 @@ Most deep-research workflows are single-engine, one-shot, and hard to audit. Thi
 
 | Principle | What it means |
 |---|---|
-| Contract first | Define depth, independence, and strictness before spending. |
-| State on disk | Evidence, spend, disputes, and decisions live in a Research State file. |
+| Contract first | Define depth, independence, and strictness before spending — with estimated cost visible on the card. |
+| State on disk | Evidence, spend, disputes, and decisions live in a Research State file plus an append-only ledger. |
 | Worker affordances | Choose the cheapest adequate tool first; escalate only when the evidence needs it. |
+| Authority-weighted evidence | Sources carry tiers (T1 source of record / T2 secondary / T3 aggregator) and vintage (`as-of`); a pile of T3 agreement never corroborates. |
 | Claim-level reconciliation | Track specific claims as corroborated, single-source, disputed, or retired. |
-| Verification floor | Spot-check the most load-bearing claims before delivery. |
+| Verification floor | Spot-check load-bearing claims *and* the inferences joining them; report the yield (checked N / flipped M). |
+| Money never evaporates | Async submissions are journaled at submit time; killed sessions harvest back via resume tokens; failed extractions keep the raw payload. |
 | Host-neutral core | The runtime spine is in `HARNESS.md`; worker details and scenarios load only when needed. |
 
 ## Repository Map
@@ -49,20 +51,24 @@ Most deep-research workflows are single-engine, one-shot, and hard to audit. Thi
 
 ```mermaid
 flowchart TD
-    A["/deep &lt;question&gt;"] --> B["Organizer<br/>frame question + set research contract"]
-    B --> S["Research State scratchpad<br/>hypothesis / claims / spend / disputes"]
-    S --> L{"Inspect state<br/>choose highest info-gain per dollar"}
-    L -- "shared branch" --> W["Optional workers<br/>cascade / scholar / perplexity / openai / gemini / deepseek"]
-    L -- "isolated blind check" --> W
-    L -- "targeted lookup" --> P["sonar / host search"]
-    W --> N["Normalize claims"]
-    P --> N
-    N --> R["Reconcile<br/>corroborated / single-source / disputed"]
-    R --> S
-    R --> T{"Contract satisfied<br/>or diminishing returns?"}
+    A["/deep &lt;question&gt;"] --> I["INSPECT<br/>reuse past reports · harvest pending jobs<br/>(--list-pending → --resume)"]
+    I --> B["Contract card — user confirms before any spend<br/>depth × independence × strictness<br/>estimates grounded in --cost-stats"]
+    B --> S[("Research State + ledger<br/>hypothesis · claims · evidence [T1–T3, as-of] · spend")]
+    S --> L{"CHOOSE<br/>cheapest action against the weakest<br/>load-bearing uncertainty"}
+    L -- "orientation / gaps" --> C1["cascade · sonar · scholar<br/>host search / fetch"]
+    L -- "parallel deep wave" --> C2["--submit-only: perplexity ∥ openai ∥ gemini<br/>verify cheap claims while they run, then --resume"]
+    L -- "blind check" --> C3["fresh-context agent<br/>claim verbatim — no state, no hypothesis"]
+    L -- "process fetched files" --> C4["deepseek<br/>processor only, never retrieval"]
+    C1 --> R
+    C2 --> R
+    C3 --> R
+    C4 --> R
+    R["RECONCILE — authority-weighted<br/>T3-only agreement never corroborates<br/>corroborated / single-source / disputed"] --> S
+    R --> T{"contract met, or<br/>marginal gain &lt; marginal cost?"}
     T -- "no" --> L
-    T -- "yes" --> V["Verification floor<br/>spot-check load-bearing claims"]
-    V --> D["Final verdict<br/>with evidence status, spend, and artifacts"]
+    T -- "yes" --> V["VERIFICATION FLOOR<br/>spot-check leaves and joints (A + B → C)<br/>record yield: checked N / flipped M<br/>decision runs: adversarial fresh-context pass"]
+    V --> G["Artifact gate<br/>validate_state.py — FAILs block, WARNs get reported"]
+    G --> D["DELIVERY<br/>answer · evidence status · yield · spend ·<br/>artifacts · what would change the conclusion"]
 ```
 
 ## Research Contract
@@ -244,19 +250,26 @@ For medium-depth and deeper sessions, pass a ledger path so the worker appends m
 
 ## Field Notes
 
-- Perplexity `reasoning_effort=minimal` is ungrounded in this workflow: it can bill searches while returning no citations. Use `medium` or higher for real research.
-- Perplexity returns official `usage.cost.total_cost`; the worker reports it verbatim.
-- OpenAI currently does not return a provider cost field here; the worker estimates from token counts and web-search call count.
-- Semantic Scholar should receive keyword phrases, not natural-language questions, and should not be called in parallel. The worker retries transient GET failures and returns structured paper sources for handoff.
-- OpenAI deep-research models require a verified organization.
-- Gemini uses the Interactions API `steps` schema targeted by the worker and requires `google-genai`.
-- Failed async polls return JSON with `error` and `resume`; organizers should resume rather than re-pay for submitted work.
+### Durability and recovery
+
 - With `--ledger`, async submissions are journaled at submission time (`event: submitted`), so a killed process never loses a paid resume token; `--list-pending` (and `doctor.py`) list unharvested jobs.
-- `--cost-stats` aggregates per-provider actual costs from your ledgers — ground contract-card estimates in your own price history instead of this README's indicative numbers.
+- Failed async polls return JSON with `error` and `resume`; organizers should resume rather than re-pay for submitted work.
 - `--submit-only` fires an async engine and returns immediately — submit several engines in one wave, verify cheap claims while they run, then `--resume` each token.
 - If extraction of a completed job fails, the raw provider payload is saved to `reports/deep_raw_*.json` first — paid content survives schema drift, and `--resume` re-harvests after a fix at no extra cost.
+- `--cost-stats` aggregates per-provider actual costs from your ledgers — ground contract-card estimates in your own price history instead of this README's indicative numbers.
 - Report filenames include a short hash of `query + pid` so parallel probes and CJK-only queries do not overwrite one another.
-- Final deliveries are handoff-oriented: include the contract, evidence status, verification checks, spend, artifacts, and next inspection points.
+
+### Provider behavior
+
+- Perplexity `reasoning_effort=minimal` is ungrounded in this workflow: it can bill searches while returning no citations. Use `medium` or higher for real research.
+- Perplexity returns official `usage.cost.total_cost`; the worker reports it verbatim. OpenAI does not return a cost field here; the worker estimates from token counts and web-search call count.
+- OpenAI deep-research models require a verified organization.
+- Semantic Scholar should receive keyword phrases, not natural-language questions, and should not be called in parallel. The worker retries transient GET failures and returns structured paper sources for handoff.
+- Gemini uses the Interactions API `steps` schema targeted by the worker and requires `google-genai`.
+
+### Delivery
+
+- Final deliveries are handoff-oriented: contract, evidence status with tiers and vintage, verification yield, spend, artifacts, and next inspection points.
 
 ## Status
 

@@ -1,6 +1,6 @@
 # claude-research-cascade
 
-[English](README.md) | [繁體中文](README.zh-TW.md)
+[English](README.md) | **繁體中文**
 
 [![License: MIT](https://img.shields.io/github/license/jechiu16/claude-research-cascade?style=flat-square)](LICENSE)
 [![Host neutral](https://img.shields.io/badge/host-neutral-24292f?style=flat-square)](HARNESS.md)
@@ -20,11 +20,13 @@
 
 | 原則 | 意義 |
 |---|---|
-| 先定契約 | 花錢前先定義深度、獨立性門檻與嚴格程度。 |
-| 狀態落盤 | 證據、花費、爭議與決策都寫進 Research State 檔案。 |
+| 先定契約 | 花錢前先定義深度、獨立性門檻與嚴格程度 — 契約卡上直接看得到估價。 |
+| 狀態落盤 | 證據、花費、爭議與決策寫進 Research State 檔案 + append-only 帳本。 |
 | Worker affordances | 先選足夠便宜的工具；只有證據需要時才升級昂貴 worker。 |
+| 權威加權證據 | 來源帶 tier（T1 source of record / T2 二手 / T3 aggregator）與時點（`as-of`）；T3 堆再多也不構成佐證。 |
 | 主張層級對帳 | 逐條標記主張為已佐證、單一來源、有爭議或已淘汰。 |
-| 驗證底線 | 交付前獨立抽查最關鍵、最承重的主張。 |
+| 驗證底線 | 抽查承重主張**與它們之間的推論關節**；回報 yield（抽查 N 條 / 翻掉 M 條）。 |
+| 錢不蒸發 | Async 提交當下落帳；session 死掉靠 resume token 收割回來；抽取失敗保留原始 payload。 |
 | 宿主中立 | Runtime spine 在 `HARNESS.md`；worker 細節與 scenarios 需要時才載入。 |
 
 ## Repo 結構
@@ -49,20 +51,24 @@
 
 ```mermaid
 flowchart TD
-    A["/deep &lt;question&gt;"] --> B["Organizer<br/>釐清問題 + 設定研究契約"]
-    B --> S["Research State scratchpad<br/>暫定假說 / 主張 / 花費 / 爭議"]
-    S --> L{"檢查狀態<br/>選擇每美元資訊量最高的下一批 action"}
-    L -- "shared branch" --> W["Optional workers<br/>cascade / scholar / perplexity / openai / gemini / deepseek"]
-    L -- "isolated blind check" --> W
-    L -- "targeted lookup" --> P["sonar / host search"]
-    W --> N["正規化主張"]
-    P --> N
-    N --> R["對帳<br/>已佐證 / 單一來源 / 有爭議"]
-    R --> S
-    R --> T{"達到契約門檻<br/>或邊際收益下降?"}
+    A["/deep &lt;question&gt;"] --> I["INSPECT<br/>重用舊報告 · 收割未完成 job<br/>（--list-pending → --resume）"]
+    I --> B["契約卡 — 使用者確認前零花費<br/>深度 × 獨立性 × 嚴格度<br/>估價來自 --cost-stats 實價史"]
+    B --> S[("Research State + 帳本<br/>假說 · 主張 · 證據 [T1–T3, as-of] · 花費")]
+    S --> L{"CHOOSE<br/>用最便宜的動作<br/>打最弱的承重不確定性"}
+    L -- "定向 / 補缺口" --> C1["cascade · sonar · scholar<br/>host search / fetch"]
+    L -- "並行深度 wave" --> C2["--submit-only: perplexity ∥ openai ∥ gemini<br/>等待期間做便宜驗證，再 --resume 收割"]
+    L -- "盲驗" --> C3["fresh-context agent<br/>只給主張原文 — 無 state、無假說"]
+    L -- "加工已抓材料" --> C4["deepseek<br/>只加工，不檢索"]
+    C1 --> R
+    C2 --> R
+    C3 --> R
+    C4 --> R
+    R["RECONCILE — 權威加權<br/>T3-only 一致不構成佐證<br/>已佐證 / 單一來源 / 有爭議"] --> S
+    R --> T{"達到契約門檻，或<br/>邊際收益 &lt; 邊際成本?"}
     T -- "否" --> L
-    T -- "是" --> V["驗證底線<br/>抽查承重主張"]
-    V --> D["最終結論<br/>附證據狀態、花費與產物"]
+    T -- "是" --> V["驗證底線<br/>抽查葉子與關節（A + B → C）<br/>記 yield：抽查 N / 翻掉 M<br/>decision run 加對抗檢驗（fresh context）"]
+    V --> G["產物 gate<br/>validate_state.py — FAIL 擋下、WARN 如實回報"]
+    G --> D["交付<br/>答案 · 證據狀態 · yield · 花費 ·<br/>產物 · 什麼證據會推翻結論"]
 ```
 
 ## 研究契約
@@ -244,19 +250,26 @@ python scripts/validate_transcripts.py
 
 ## 實務筆記
 
-- 在這個 workflow 裡，Perplexity `reasoning_effort=minimal` 視為 ungrounded：它可能計費搜尋，卻不回傳引用。真正研究請用 `medium` 或更高。
-- Perplexity 會回傳官方 `usage.cost.total_cost`；worker 會照實報告。
-- OpenAI 這裡目前不回傳 provider cost field；worker 會用 token 數和 web-search call 數估算。
-- Semantic Scholar 應該收到 keyword phrases，而不是自然語言問題；也不要平行呼叫。Worker 會 retry 暫時性的 GET 失敗，並回傳結構化 paper sources 方便 handoff。
-- OpenAI deep-research models 需要 verified organization。
-- Gemini 使用 worker 目標支援的 Interactions API `steps` schema，並需要 `google-genai`。
-- Async poll 失敗時會回傳含有 `error` 與 `resume` 的 JSON；Organizer 應該 resume，而不是重新付費提交。
+### Durability 與恢復
+
 - 帶 `--ledger` 時，async 提交會在提交當下就落帳（`event: submitted`）— process 被殺也不會丟已付費的 resume token；`--list-pending`（以及 `doctor.py`）會列出未收割的 job。
-- `--cost-stats` 從你自己的帳本聚合 per-provider 實價 — 契約卡估價用你的價格史，不用 README 裡會腐爛的參考數字。
+- Async poll 失敗時會回傳含有 `error` 與 `resume` 的 JSON；Organizer 應該 resume，而不是重新付費提交。
 - `--submit-only` 提交即返回 — 一輪齊發多個引擎，趁它們跑的時候做便宜驗證，再逐一 `--resume` 收割。
 - Completed job 的抽取若失敗，原始 provider payload 會先存進 `reports/deep_raw_*.json` — 已付費內容不因 schema 漂移而蒸發，修好後 `--resume` 零成本重收割。
+- `--cost-stats` 從你自己的帳本聚合 per-provider 實價 — 契約卡估價用你的價格史，不用 README 裡會腐爛的參考數字。
 - Report 檔名包含 `query + pid` 的短 hash，避免平行 probe 或純 CJK query 互相覆蓋。
-- 最終交付偏 handoff artifact：包含 contract、證據狀態、驗證檢查、花費、產物與下一步檢查點。
+
+### Provider 行為
+
+- 在這個 workflow 裡，Perplexity `reasoning_effort=minimal` 視為 ungrounded：它可能計費搜尋，卻不回傳引用。真正研究請用 `medium` 或更高。
+- Perplexity 會回傳官方 `usage.cost.total_cost`，worker 照實報告；OpenAI 不回傳 cost field，worker 用 token 數和 web-search call 數估算。
+- OpenAI deep-research models 需要 verified organization。
+- Semantic Scholar 應該收到 keyword phrases，而不是自然語言問題；也不要平行呼叫。Worker 會 retry 暫時性的 GET 失敗，並回傳結構化 paper sources 方便 handoff。
+- Gemini 使用 worker 目標支援的 Interactions API `steps` schema，並需要 `google-genai`。
+
+### 交付
+
+- 最終交付偏 handoff artifact：contract、帶 tier 與時點的證據狀態、驗證 yield、花費、產物與下一步檢查點。
 
 ## 狀態
 
