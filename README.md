@@ -20,7 +20,7 @@ Most deep-research workflows are single-engine, one-shot, and hard to audit. Thi
 |---|---|
 | Contract first | Define depth, independence, and strictness before spending. |
 | State on disk | Evidence, spend, disputes, and decisions live in a Research State file. |
-| Worker portfolio | Use the cheapest adequate worker first; escalate only when the evidence needs it. |
+| Worker affordances | Choose the cheapest adequate tool first; escalate only when the evidence needs it. |
 | Claim-level reconciliation | Track specific claims as corroborated, single-source, disputed, or retired. |
 | Verification floor | Spot-check the most load-bearing claims before delivery. |
 | Host-neutral core | The spec is in `HARNESS.md`; host bindings stay thin. |
@@ -29,10 +29,10 @@ Most deep-research workflows are single-engine, one-shot, and hard to audit. Thi
 
 | File | Purpose |
 |---|---|
-| [HARNESS.md](HARNESS.md) | Host-neutral research harness specification: workers, state schema, loop, hooks, presets, and failure policy. |
+| [HARNESS.md](HARNESS.md) | Host-neutral Organizer protocol: tool affordances, state discipline, loop, hooks, presets, and recovery playbook. |
 | [SKILL.md](SKILL.md) | Claude Code binding. Registers `/deep` and maps harness primitives to Claude Code tools. |
 | [AGENTS.md](AGENTS.md) | Codex binding. Explains discovery, install wiring, and Codex-native operating rules. |
-| [scripts/deep_research.py](scripts/deep_research.py) | Worker CLI. One call, one action, resumable where supported, JSON on stdout. |
+| [scripts/deep_research.py](scripts/deep_research.py) | Bundled worker CLI. One call, one action, resumable where supported, JSON on stdout. |
 | [.env.example](.env.example) | API key template for worker providers. |
 
 ## How It Works
@@ -40,9 +40,9 @@ Most deep-research workflows are single-engine, one-shot, and hard to audit. Thi
 ```mermaid
 flowchart TD
     A["/deep &lt;question&gt;"] --> B["Organizer<br/>frame question + set research contract"]
-    B --> S["Research State on disk<br/>evidence pool / spend ledger / open disputes"]
+    B --> S["Research State scratchpad<br/>hypothesis / claims / spend / disputes"]
     S --> L{"Inspect state<br/>choose highest info-gain per dollar"}
-    L -- "shared branch" --> W["Workers<br/>cascade / scholar / perplexity / openai / gemini / deepseek"]
+    L -- "shared branch" --> W["Optional workers<br/>cascade / scholar / perplexity / openai / gemini / deepseek"]
     L -- "isolated blind check" --> W
     L -- "targeted lookup" --> P["sonar / host search"]
     W --> N["Normalize claims"]
@@ -75,7 +75,9 @@ Preset names used by the harness:
 
 Dollar figures in this repository are indicative at list prices. The code records cost where providers expose it, but it does not enforce a budget ceiling.
 
-## Workers
+## Worker Affordances
+
+Workers are tools the Organizer may choose from, not pipeline stages.
 
 | Provider | Role | Index family | Typical cost | Typical time |
 |---|---|---|---|---|

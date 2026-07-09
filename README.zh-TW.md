@@ -20,7 +20,7 @@
 |---|---|
 | 先定契約 | 花錢前先定義深度、獨立性門檻與嚴格程度。 |
 | 狀態落盤 | 證據、花費、爭議與決策都寫進 Research State 檔案。 |
-| Worker 組合 | 先用足夠便宜的 worker；只有證據需要時才升級昂貴 worker。 |
+| Worker affordances | 先選足夠便宜的工具；只有證據需要時才升級昂貴 worker。 |
 | 主張層級對帳 | 逐條標記主張為已佐證、單一來源、有爭議或已淘汰。 |
 | 驗證底線 | 交付前獨立抽查最關鍵、最承重的主張。 |
 | 宿主中立 | 核心規格在 `HARNESS.md`；不同宿主只需要薄薄一層 binding。 |
@@ -29,10 +29,10 @@
 
 | 檔案 | 用途 |
 |---|---|
-| [HARNESS.md](HARNESS.md) | 宿主中立的研究 harness 規格：worker、狀態 schema、循環、hook、preset 與失敗策略。 |
+| [HARNESS.md](HARNESS.md) | 宿主中立的 Organizer protocol：工具 affordances、狀態紀律、循環、hook、preset 與 recovery playbook。 |
 | [SKILL.md](SKILL.md) | Claude Code binding。註冊 `/deep` 並把 harness primitive 對應到 Claude Code 工具。 |
 | [AGENTS.md](AGENTS.md) | Codex binding。說明 discovery、安裝接線方式與 Codex 的操作規則。 |
-| [scripts/deep_research.py](scripts/deep_research.py) | Worker CLI。一次呼叫就是一次 action；支援可恢復任務；stdout 輸出 JSON。 |
+| [scripts/deep_research.py](scripts/deep_research.py) | 內建 worker CLI。一次呼叫就是一次 action；支援可恢復任務；stdout 輸出 JSON。 |
 | [.env.example](.env.example) | Worker provider 的 API key 範本。 |
 
 ## 運作方式
@@ -40,9 +40,9 @@
 ```mermaid
 flowchart TD
     A["/deep &lt;question&gt;"] --> B["Organizer<br/>釐清問題 + 設定研究契約"]
-    B --> S["Research State 落盤<br/>證據池 / 花費 ledger / 開放爭議"]
+    B --> S["Research State scratchpad<br/>暫定假說 / 主張 / 花費 / 爭議"]
     S --> L{"檢查狀態<br/>選擇每美元資訊量最高的下一批 action"}
-    L -- "shared branch" --> W["Workers<br/>cascade / scholar / perplexity / openai / gemini / deepseek"]
+    L -- "shared branch" --> W["Optional workers<br/>cascade / scholar / perplexity / openai / gemini / deepseek"]
     L -- "isolated blind check" --> W
     L -- "targeted lookup" --> P["sonar / host search"]
     W --> N["正規化主張"]
@@ -75,7 +75,9 @@ Harness 使用的 preset：
 
 Repo 裡的美元數字只代表當前清單價格下的概略估算。程式會記錄 provider 回傳的成本資訊，但不會強制執行預算上限。
 
-## Workers
+## Worker Affordances
+
+Workers 是 Organizer 可選用的工具，不是固定 pipeline 階段。
 
 | Provider | 角色 | Index family | 典型成本 | 典型時間 |
 |---|---|---|---|---|
