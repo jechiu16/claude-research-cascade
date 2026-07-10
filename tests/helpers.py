@@ -140,6 +140,56 @@ def confirmed_medium_contract(
     return contract
 
 
+def confirmed_demo_contract(
+    route: str = "demo-probe",
+    request_count: int = 1,
+    probe_ceiling: int = 2,
+    registry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved = copy.deepcopy(load_provider_registry() if registry is None else registry)
+    contract = draft_medium_contract()
+    contract["scout_route"] = route
+    contract["resource_envelope"]["physical_ceiling"].update(
+        {"probe": probe_ceiling, "host_retrieval": 0}
+    )
+    contract["stage_permit_map"] = [
+        {
+            "stage": "primary_scout",
+            "category": "probe",
+            "route": route,
+            "invocations": 1,
+            "count": request_count,
+            "reserved": False,
+        },
+        {
+            "stage": "local_applicability",
+            "category": "local",
+            "route": "local",
+            "invocations": 1,
+            "count": 1,
+            "reserved": False,
+        },
+        {
+            "stage": "final_inference_review",
+            "category": "organizer_pass",
+            "route": "host",
+            "invocations": 1,
+            "count": 1,
+            "reserved": True,
+        },
+    ]
+    contract = normalize_contract(contract)
+    records = referenced_provider_records(contract, resolved)
+    contract["confirmation"] = {
+        "confirmed_by": "user",
+        "confirmed_at": NOW,
+        "card_sha256": contract_card_sha256(contract),
+        "registry_sha256": provider_registry_sha256(resolved),
+        "referenced_records_sha256": provider_records_sha256(records),
+    }
+    return contract
+
+
 def write_overlay(path: Path, providers: list[dict[str, Any]]) -> Path:
     import json
 
