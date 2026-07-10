@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a real /deep session's artifacts (Research State + ledger).
+"""Validate canonical v2 sessions or retained legacy Markdown state.
 
 This is the artifact gate: it constrains the *product*, never the process.
 The Organizer researches however it judges best; before delivery this script
@@ -22,6 +22,12 @@ import json
 import re
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from research_harness.validation import validate_session
 
 STATUS_VOCAB = ("corroborated", "single-source", "corroborated-same-family",
                 "disputed", "retired", "unverified")
@@ -143,7 +149,39 @@ def main() -> int:
               if args.json else "FAIL no state file found (reports/deep_state_*.md)")
         return 1
 
+    v2_session = None
+    if state_path.is_dir():
+        v2_session = state_path
+    elif state_path.name == "state.json":
+        try:
+            candidate = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            candidate = None
+        if isinstance(candidate, dict) and candidate.get("schema_version") == "2.0":
+            v2_session = state_path.parent
+    if v2_session is not None:
+        try:
+            report = validate_session(v2_session)
+        except Exception as exc:
+            print(
+                json.dumps({"schema_version": "2.0", "ok": False, "error": str(exc)})
+                if args.json
+                else f"FAIL {exc}"
+            )
+            return 1
+        result = {"schema_version": "2.0", "session": str(v2_session), **report.to_dict()}
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+        else:
+            print(f"/deep v2 session validation — {v2_session}")
+            for issue in report.issues:
+                print(f"{issue.level} {issue.code}: {issue.message} ({issue.path})")
+            if report.ok:
+                print("OK   all deterministic v2 gates passed")
+        return 0 if report.ok else 1
+
     result = validate(state_path, args.ledger)
+    result["schema_version"] = "legacy"
     ok = not result["fails"]
     if args.json:
         result["ok"] = ok

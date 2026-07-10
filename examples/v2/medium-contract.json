@@ -1,0 +1,103 @@
+{
+  "posture": "lookup",
+  "tier": "medium",
+  "scout_route": "host-web",
+  "resource_envelope": {
+    "physical_ceiling": {
+      "probe": 0,
+      "deep": 0,
+      "processor": 0,
+      "network_experiment": 0,
+      "transport": 0,
+      "host_retrieval": 3,
+      "local": 1,
+      "organizer_pass": 1
+    },
+    "external": {
+      "metered_ceiling": {
+        "probe": 0,
+        "deep": 0,
+        "processor": 0,
+        "network_experiment": 0,
+        "transport": 0
+      },
+      "max_wall_time_seconds": 3600,
+      "allowed_endpoint_classes": [],
+      "local_file_egress": false,
+      "network_experiment_endpoints": [],
+      "estimated_spend_usd": {
+        "minimum": 0.0,
+        "maximum": 0.0,
+        "hard_cap": false
+      },
+      "raw_storage_bytes": 10485760
+    },
+    "host": {
+      "context_class": "standard",
+      "admitted_characters": 24000,
+      "estimated_tokens": 6000
+    },
+    "local": {
+      "admitted_output_characters": 12000,
+      "max_wall_time_seconds": 900,
+      "network_egress": false
+    }
+  },
+  "stage_permit_map": [
+    {
+      "stage": "primary_scout",
+      "category": "host_retrieval",
+      "route": "host-web",
+      "invocations": 1,
+      "count": 1,
+      "reserved": false
+    },
+    {
+      "stage": "local_applicability",
+      "category": "local",
+      "route": "local",
+      "invocations": 1,
+      "count": 1,
+      "reserved": false
+    },
+    {
+      "stage": "anti_lock_in",
+      "category": "host_retrieval",
+      "route": "host-web",
+      "invocations": 1,
+      "count": 1,
+      "reserved": true
+    },
+    {
+      "stage": "verification",
+      "category": "host_retrieval",
+      "route": "host-web",
+      "invocations": 1,
+      "count": 1,
+      "reserved": true
+    },
+    {
+      "stage": "final_inference_review",
+      "category": "organizer_pass",
+      "route": "host",
+      "invocations": 1,
+      "count": 1,
+      "reserved": true
+    }
+  ],
+  "evidence_floor": {
+    "minimum_load_bearing_claims": 1,
+    "require_raw_artifacts": true
+  },
+  "artifact_policy": {
+    "default_retention": "session",
+    "allow_provider_payloads": false
+  },
+  "confirmation": {
+    "confirmed_by": "user",
+    "confirmed_at": "2026-07-10T12:00:00Z",
+    "card_sha256": "8c88200877b29d6076e37031d897180f9c713ad65c31473440ce8802897c5200",
+    "registry_sha256": "a4042bfbd3cb4b4354f395ecbeffb2905f168ce91567e2a9946a53904926543f",
+    "referenced_records_sha256": "97a341a3d52630bfe488e41ef57806efb14ebb428a547a88a3f4e643a343159e"
+  }
+}

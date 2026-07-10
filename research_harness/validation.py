@@ -370,7 +370,13 @@ def _validate_evidence(
         start = evidence.get("excerpt_start")
         end = evidence.get("excerpt_end")
         excerpt = evidence.get("excerpt")
-        if (
+        artifact_was_purged = artifact is not None and artifact.get("availability") in {
+            "purge_pending",
+            "purged",
+        }
+        if artifact_was_purged:
+            pass
+        elif (
             payload is None
             or not isinstance(start, int)
             or isinstance(start, bool)
