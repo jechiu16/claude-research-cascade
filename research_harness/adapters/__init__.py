@@ -12,8 +12,9 @@ never appear in fixtures, occurrences, or fingerprints.
 
 from __future__ import annotations
 
-from . import sonar
+from . import scholar, sonar
 
 ADAPTERS = {
     "perplexity-chat-completions@v1": {"build": sonar.build, "parse": sonar.parse},
+    "semantic-scholar-graph-search@v1": {"build": scholar.build, "parse": scholar.parse},
 }
