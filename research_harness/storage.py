@@ -182,17 +182,27 @@ def session_lock(session_dir: Path, timeout_s: float = 5.0) -> Iterator[None]:
             os.close(fd)
         _fsync_dir(session_dir)
         break
-    try:
-        yield
-    finally:
+    def _release() -> None:
         try:
             current = json.loads(lock_path.read_text(encoding="utf-8"))
-            if current.get("token") != token:
-                raise StorageError("session lock ownership changed unexpectedly")
-            lock_path.unlink()
-            _fsync_dir(session_dir)
         except FileNotFoundError:
             raise StorageError("session lock disappeared before release")
+        if current.get("token") != token:
+            raise StorageError("session lock ownership changed unexpectedly")
+        lock_path.unlink()
+        _fsync_dir(session_dir)
+
+    try:
+        yield
+    except BaseException:
+        # The body's exception is the diagnosis; a broken release must not
+        # replace it. Best-effort unlock, then re-raise the original.
+        try:
+            _release()
+        except Exception:
+            pass
+        raise
+    _release()
 
 
 def _load_state_unlocked(session_dir: Path) -> dict[str, Any]:

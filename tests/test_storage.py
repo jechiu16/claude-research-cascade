@@ -245,3 +245,30 @@ class StorageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LockReleaseMaskingTests(unittest.TestCase):
+    def test_body_exception_survives_broken_lock_release(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from research_harness.storage import LOCK_FILE, session_lock
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            session = Path(tempdir)
+            with self.assertRaises(ValueError):  # the body's error, not StorageError
+                with session_lock(session):
+                    (session / LOCK_FILE).unlink()  # sabotage the release path
+                    raise ValueError("the real diagnosis")
+
+    def test_clean_body_still_fails_loudly_on_broken_release(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from research_harness.storage import LOCK_FILE, StorageError, session_lock
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            session = Path(tempdir)
+            with self.assertRaises(StorageError):
+                with session_lock(session):
+                    (session / LOCK_FILE).unlink()
