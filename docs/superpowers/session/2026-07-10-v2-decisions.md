@@ -87,9 +87,56 @@ The Apodex/FutureFlow comparison contributed five ideas worth retaining: explici
 
 ## Current Implementation Boundary
 
-At the start of the v2 runtime-foundation branch, the repository runtime is still v1: Markdown state, `depth x independence x strictness`, advisory rather than mechanical quota, and Markdown worker reports. The v2 design spec is committed, but implementation proof does not yet exist.
+The historical branch baseline was v1: Markdown state, legacy three-axis contracts, advisory rather than mechanical quota, and Markdown worker reports. Commits through `bd54525` implement the deterministic v2 foundation and its CLI.
 
 The first implementation slice covers hash-bound confirmed contracts, a versioned capability registry and immutable snapshot, secret-free preflight, canonical JSON, validated atomic state/events with owned-tail recovery, exact stage-scoped permit enforcement, provenance/storage-rights-gated raw ingestion, resumable purge plus validation/rerender, fail-closed lineage validation with positive PASS fixtures, stale-report detection, deterministic HTML, host-neutral CLI, and runtime documentation. All external network routes remain disabled in this slice. New/bound provider adapters, result fusion, worker transport enforcement, full Organizer adaptive protocol, comparative/provider adoption evaluation, installer polish, CI, and public release remain named follow-on plans and must not be claimed complete after the first slice.
+
+## Task 8 Alignment Audit
+
+Status vocabulary: `implemented` means code, deterministic tests, and runtime-facing docs agree in this slice. `deferred` means the current slice does not claim the property and names its follow-on. `contradicted` would block the slice. This audit found no `contradicted` row.
+
+### Product Decisions
+
+| Decision | Status | Evidence or named follow-on |
+|---|---|---|
+| Trigger | implemented | `SKILL.md`, `AGENTS.md`, and docs tests retain explicit `/deep` activation. |
+| Spend authority | implemented | Triple-hash contract confirmation, init/pre-permit rejection, and CLI tamper tests. |
+| Cost control | implemented | Exact physical ceilings, route multiplicity, atomic reservation, and uncertain-attempt consumption. |
+| User-facing axes | implemented | Contract schema and runtime docs use posture and tier. |
+| Cost tiers | deferred | Exact stage maps work, but canonical Low/Medium/High template construction and minimum tier semantics belong to the Organizer-protocol follow-on. |
+| Organizer | implemented | Runtime stores no hard-coded Organizer model; host binding uses the selected model. |
+| Scientific behavior | deferred | State sections and some gates exist; prediction packets, surprise-driven transition checks, and full posture fixtures belong to the Organizer-protocol follow-on. |
+| Reinforcement | deferred | Medium reserved mappings and High verifier gate exist; a distinct High capacity template and adjudication operation remain in the Organizer-protocol follow-on. |
+| Anti-lock-in | implemented | Medium/High scientific or decision `PASS` requires a completed checkpoint record. |
+| Coverage audit | implemented | Applicable `PASS` requires a completed audit with omission dispositions. |
+| Tool palette | deferred | Registry and candidate policy are implemented; direct-source, Brave, scholarly, and fetch-fallback worker adapters remain in the provider-portfolio follow-on. |
+| Scout choice | implemented | Contract requires exactly one logical primary scout and provider-declared physical multiplicity. |
+| Deep Research | deferred | Optional route semantics are designed, but external Deep Research worker adapters remain disabled pending the request boundary. |
+| DeepSeek | deferred | Processor policy is designed, but typed processor operation and adapter remain disabled. |
+| Branch output | deferred | Canonical sections exist; deterministic branch-manifest and evidence-delta validators remain in the Organizer/worker follow-on. |
+| Canonical artifacts | implemented | Canonical JSON, immutable contract/capabilities, typed patches, events, and deterministic HTML are tested. |
+| Information preservation | implemented | Available evidence requires exact raw byte offsets and matching excerpts; invented/missing excerpts fail. |
+| Independence | deferred | Source-origin IDs are structural; claim-type-aware empirical promotion and independent-origin count enforcement remain in the evidence-semantics follow-on. |
+| Non-vacuous PASS | implemented | Empty answer, empty/mismatched load-bearing set, and evidence-floor failures are tested. |
+| High verifier | deferred | The validator requires the declared separated-verifier fields; trusted verifier-packet provenance and non-self-attestation remain in the worker/Organizer follow-on, so High is not release-validated. |
+| Host context | deferred | Contract ceilings exist; adapter/Organizer admitted-character measurement remains in the request-boundary follow-on. |
+| Local experiments | deferred | Local permits and no-egress envelope exist; typed experiment records and live integration request boundary remain in the Organizer follow-on. |
+| Async safety | deferred | Attempt consumption and owned-tail WAL recovery are implemented; bounded polling/resume/download enforcement awaits external worker adapters. |
+| Raw retention | implemented | Typed immutable ingest, secret floor, storage-rights gate, pending purge authorization, tombstones, recovery, validation, and rerender are tested. |
+| Delivery | implemented | Canonical engineering handoff fields and deterministic HTML projection are available; quality of populated handoff content remains an Organizer responsibility. |
+
+### Evaluation Decisions
+
+| Decision | Status | Evidence or named follow-on |
+|---|---|---|
+| Fixed suite | deferred | Comparative evaluation runner will use a coverage matrix and sequential stopping, not a hard-coded 16-task proof. |
+| Paired baseline | deferred | Blinded direct-baseline runner and comparable-input packets belong to the comparative-evaluation follow-on. |
+| Statistical unit | deferred | Paired task-level aggregation and repeat handling belong to the comparative-evaluation follow-on. |
+| Utility | deferred | Blinded adjudication and safe-action/false-PASS/avoidable-abstention scoring remain unimplemented. |
+| Tier claims | deferred | Separate Medium and High evidence ledgers remain unimplemented; no superiority or High release claim is made. |
+| Prospective evidence | deferred | Prospective prediction lane remains in the comparative-evaluation follow-on. |
+| Paid tests | implemented | This slice makes zero paid provider calls; no future paid evaluation may run without an explicit call budget. |
+| Provider adoption | deferred | Candidates default disabled and snapshot correctly; query-class benchmarks and sequential adoption ledgers remain in the provider-portfolio follow-on. |
 
 ## Alignment Checkpoint
 

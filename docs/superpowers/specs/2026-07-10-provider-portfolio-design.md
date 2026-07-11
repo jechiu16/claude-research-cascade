@@ -290,3 +290,14 @@ No paid provider benchmark runs without a user-confirmed evaluation call budget.
 ## 11. Revisit Conditions
 
 Re-evaluate the portfolio when a provider changes index provenance, pricing unit, storage rights, privacy, lifecycle, or result schema; when retained route metrics show degradation; or when a new query class repeatedly fails current coverage gates. Registry updates require docs verification, fixture refresh, and targeted benchmark evidence before enablement.
+
+## 12. Foundation Implementation Checkpoint
+
+The v2 foundation now has a versioned registry, immutable per-session capability snapshots, secret-free preflight, exact route multiplicity, structured storage rights, and monotone overlay validation. Every external network provider remains `enabled=false`. Host-native, local, Organizer, and deterministic no-network test routes are the only enabled records; deterministic demo output is prohibited from canonical evidence.
+
+This checkpoint does not implement the worker request boundary, common retrieval-occurrence adapters, deterministic fusion, or adoption benchmark runner. Therefore:
+
+- existing credentials and legacy worker success do not establish execution readiness;
+- no external route may acquire a v2 permit or persist provider payloads through the generic artifact CLI;
+- no Brave, OpenAlex, Exa, Mojeek, Jina, Firecrawl, or other new key is requested yet;
+- the next provider work starts with bound adapter fixtures and a named call budget, then runs the declared query-class benchmark before any enablement.

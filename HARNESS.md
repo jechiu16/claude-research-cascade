@@ -1,142 +1,235 @@
-# /deep Organizer Harness
+# /deep V2 Organizer Harness
 
-**Host-neutral runtime spine.** Claude Code uses [SKILL.md](SKILL.md); Codex uses [AGENTS.md](AGENTS.md). Worker details live in [WORKERS.md](WORKERS.md). Calibration examples live in [SCENARIOS.md](SCENARIOS.md).
+This is the host-neutral executable protocol. Claude Code uses [SKILL.md](SKILL.md); Codex uses [AGENTS.md](AGENTS.md). The design rationale lives under `docs/superpowers/specs/`.
 
-## What This Is
+## Purpose
 
-`/deep` is not a research engine. It is an explicit trigger that wakes the host agent into an **Organizer** role for one bounded research session.
+`/deep` is an explicit trigger for one bounded research session. The selected host model is always the **Organizer**. It frames the problem, chooses checks, reconciles evidence, judges inference quality, and turns the result into a development handoff. Workers may supply evidence or independent analysis; they never own the final verdict.
 
-The Organizer's job is to frame the question, set the research contract, choose tools, maintain state, reconcile claims, verify load-bearing evidence, and deliver a handoff-ready answer.
+The runtime improves reliability by making unsupported success mechanically difficult. It does not guarantee truth or complete unknown-unknown discovery. A run ends as `PASS`, `PARTIAL`, or `BLOCKED`.
 
-The objective is **maximum information gain per dollar across the available tool portfolio**. The steering question is always:
+## Current Boundary
 
-> Which load-bearing claim is weakest right now, and what is the cheapest action that strengthens it?
+The foundation runtime enables host-native retrieval, local inspection, Organizer passes, and deterministic no-network test routes. Every external network worker and processor route is **disabled** in `provider_registry.json` until its adapter:
+
+1. uses the common v2 request boundary for every outbound request;
+2. has deterministic request, error, recovery, provenance, and storage-rights fixtures;
+3. has a named adoption status and evidence budget.
+
+Credential doctor readiness is not v2 execution readiness. Do not call the legacy worker CLI to bypass a disabled route. No new provider key should be requested before its adapter fixtures and benchmark budget exist.
 
 ## Non-Negotiables
 
-- Trigger only on explicit `/deep`; ordinary research requests do not activate this protocol.
-- Infer the research target from context by default; ask framing questions only when ambiguity would change scope, cost, worker choice, or answer.
-- Always ask and record the three-axis research contract before worker spend.
-- Keep Research State for `medium+` depth or any multi-action run.
-- Treat worker reports as evidence inputs, not final truth.
-- Reconcile claims into evidence statuses before delivery.
-- Spot-check the most load-bearing claims before delivery.
-- Include spend and artifact paths in the final answer.
+- Activate only on explicit `/deep`.
+- The user pulls the trigger after seeing the contract card and exact physical call counts.
+- Choose exactly one primary scout route.
+- Acquire an exact permit before every action; uncertain attempts remain consumed.
+- Keep one semantic source of truth: canonical `state.json`.
+- Treat model or retrieval agreement as discovery signal, not source-origin independence.
+- Preserve exact raw evidence and offsets for load-bearing claims.
+- Never let deterministic demo output support a canonical claim.
+- Validate before `PASS`; render HTML only as a deterministic projection.
+- Prefer a safe `PARTIAL` or `BLOCKED` over an unsupported conclusion, but do not use abstention to avoid a reachable answer.
 
-## 60-Second Execution Checklist
+## Contract Card
 
-1. Frame the question from context; ask only scope-changing clarifiers.
-2. Ask and record the contract: depth x independence x strictness.
-3. Create Research State if `medium+` or more than one action is likely.
-4. Choose the first batch by weakest load-bearing uncertainty, not by a fixed tool order.
-5. Execute parallel-safe actions together; respect rate limits.
-6. Normalize and reconcile claims; mark disputed or single-source items honestly.
-7. Verify load-bearing claims, then deliver answer, spend, artifacts, and handoff notes.
+The contract has two scientific axes plus explicit resources.
 
-## Research Contract
+### Posture
 
-One card, three axes. The Organizer may recommend a preset, but the user must confirm or choose the axes before worker spend.
+| Posture | Use when | Required spirit |
+|---|---|---|
+| `lookup` | A source of record defines a bounded fact | Fetch the defining primary source directly; avoid artificial hypotheses |
+| `synthesis` | The task needs a landscape or literature map | Declare coverage dimensions, omissions, shared origins, and dates |
+| `scientific` | Mechanisms are unclear or evidence conflicts | Write alternatives and expected observations before discriminating checks |
+| `decision` | Research will drive architecture or costly action | Expose premises, weakest inference joints, reversibility, and cost of error |
 
-| Axis | Options |
-|---|---|
-| **Depth** | `shallow`: one probe wave or quick answer; `medium`: probes plus one or two standard reports; `deep`: multiple engines and iteration |
-| **Independence** | `single`: one adequate source; `two-source`: load-bearing claims need two sources; `cross-family-blind`: two index families plus one blind isolated pass |
-| **Strictness** | `first`: stop at first satisfactory answer; `gaps`: close obvious gaps; `chase`: pursue disputes until resolved or clearly unresolvable |
+### Tier
 
-Preset shortcuts: `fast` = shallow x single x first; `standard` = medium x two-source x gaps; `decision` = deep x cross-family-blind x chase.
+| Tier | Default intent | Reinforcement |
+|---|---|---|
+| `low` | Narrow, reversible, one-cycle answer | Targeted verification only when a load-bearing claim needs it |
+| `medium` | Development-grade evidence with bounded challenge capacity | One reserved anti-lock-in or verification action when posture requires it |
+| `high` | Difficult, ambiguous, or hard-to-reverse decision | Additional challenge capacity plus context-separated verifier |
+| `custom` | User-selected exact envelope | Every stage, route, logical invocation, and physical request is explicit |
 
-Explicit user budgets override the depth preset's spending spirit, but prices are indicative only. No code enforces a hard budget ceiling.
+Tiers do not encode provider dollar prices. The contract controls **counts**: logical invocations, provider-declared physical multiplicity, and category ceilings. Display estimated cost ranges as uncertain information, never as an enforceable dollar cap.
 
-## Research State
+The card also records:
 
-Research State is the Organizer's external working memory for this one trigger. Create `reports/deep_state_<yyyymmdd>_<slug>.md` from `medium` depth up, or whenever more than one action runs. Rewrite it after every reconcile step.
+- one `scout_route`;
+- the exact `(stage, category, route)` permit map;
+- reserved versus discovery capacity;
+- external, host-context, and local resource envelopes;
+- raw-storage ceiling and artifact policy;
+- evidence floor;
+- card, resolved-registry, and referenced-provider-record hashes.
 
-Use this compact shape:
+## Trigger and Confirmation
 
-```md
-# Research State: <question>
-contract: depth=<...> | independence=<...> | strictness=<...> | status=running | started=<ts>
-framing: <core question, exclusions, success criteria>
-hypothesis: <best answer so far; provisional until verified>
-next action: <one sentence: cheapest uncertainty reducer>
-spend: running total $X.XX; ledger=<path>
-claims: <id | claim | why it matters | status | next check>
-evidence: <id | claim | status | sources [T1-T3] | independence | as-of>
-verification: checked=<n> flipped=<m> | <one line on what flipped and why>
-open: gaps=<...>; disputes=<...>
-log: <n>: chose <batch> because <one line>
+1. Infer the target from conversation context. Ask only questions whose answers change scope, posture, tier, route, or cost.
+2. Inspect secret-free capabilities:
+
+```bash
+"$PY" scripts/research_state.py providers --json
 ```
 
-Statuses: `corroborated`, `single-source`, `corroborated-same-family`, `disputed`, `retired`, `unverified`.
+3. Draft the card and run:
 
-`as-of` is the evidence vintage: publication or retrieval date. Date-sensitive claims (prices, policies, versions, availability) must carry it; a stale source does not clear the bar on a volatile topic.
+```bash
+"$PY" scripts/research_state.py prepare --contract draft.json --json
+```
 
-Source tiers — annotate each source, because corroboration is authority-weighted, not vote-counted:
+4. Show the user the recommended posture/tier, one scout route, physical counts by stage, reserved calls, host-context class, local/network boundaries, and estimated spend uncertainty. Wait for an explicit choice.
+5. After the user confirms the displayed card, bind it and initialize:
 
-- **T1** source of record / primary: official docs, regulator filings, standards, the vendor's own pages for claims about the vendor, a peer-reviewed paper for its own findings, primary data series.
-- **T2** quality secondary: reporting or reviews that cite primaries, textbooks, reputable benchmarks.
-- **T3** aggregator/UGC/SEO content — and uncited model prose, which is not evidence at all.
+```bash
+"$PY" scripts/research_state.py confirm \
+  --prepared prepared.json \
+  --card-sha256 <displayed-card-hash> \
+  --confirmed-at <timestamp> \
+  --confirmed-by user \
+  --json
 
-The `verification:` line appears from `medium` depth up before delivery (see Verification Floor).
+"$PY" scripts/research_state.py init <session-dir> \
+  --question "<research target>" \
+  --contract confirmed.json \
+  --json
+```
 
-## Organizer Loop
+Changing the card, registry, route meaning, or confirmation creates a new session. It is not an in-place patch.
 
-**0 INIT** - Infer the target from conversation context. Ask up to three clarifying questions only if the answer would change the plan. Ask the three-axis contract every time and record it.
+## Scientific Organizer Loop
 
-**1 INSPECT** - Read the state and recent `reports/` artifacts on overlapping topics. Reuse old paid reports only if their age and scope still fit the question. If a ledger exists, check for unharvested async submissions (`--list-pending`) and harvest them before paying for anything new.
+### 1. Inspect
 
-**2 CHOOSE** - Pick the next batch with the best expected information gain per dollar. Use free reasoning over the current pool first, targeted lookups next, broad paid retrieval last. Read [WORKERS.md](WORKERS.md) when selecting or invoking workers.
+- Recover pending WAL or already-authorized purge work before new actions.
+- Read current canonical state and overlapping retained artifacts.
+- Identify the weakest load-bearing uncertainty, not the longest unanswered list.
 
-Branch types:
+### 2. Frame and Predict
 
-- **shared**: builds on the current evidence pool.
-- **isolated**: blind verification. Prefer architectural isolation when the host supports it: a fresh-context agent that receives only the claim verbatim — no state file, no evidence pool, no current hypothesis. Fallback where fresh contexts are unavailable: the query template `Verify or refute: <claim verbatim>. What is the primary evidence for and against?`
-- **targeted**: narrow lookup for a specific gap or dispute.
+- State scope, assumptions, exclusions, and decision boundary.
+- For ambiguous work, record plausible alternatives without padding.
+- Before a discriminating check, record expected observations and what each would update.
+- Separate facts, observations, hypotheses, recommendation, and safe action.
 
-**3 EXECUTE** - Run parallel-safe actions in one wave. Avoid micro-looping one worker at a time. Keep resume tokens. If the first wave gives a useful provisional answer, share it as provisional while deeper actions continue.
+### 3. Choose One Marginal Action
 
-**4 NORMALIZE** - Extract verdict-relevant claims from each artifact with provenance. Use a processor only for already-fetched material; curate its output.
+Use the lexicographic rule:
 
-**5 RECONCILE** - Compare claims across sources. Same-family agreement does not clear a cross-family independence bar. Unanimous cross-engine agreement on a recent or contested topic is itself a signal: engines crawl the same web, so check whether the agreeing sources trace to one upstream origin before counting them as independent. Promote conflicts to `disputed` and write what would settle them. Update the state.
+1. eliminate a load-bearing failure;
+2. reduce a decision-relevant uncertainty;
+3. add a genuinely new source origin or project observation;
+4. minimize physical requests, admitted context, latency, and spend.
 
-Corroboration is authority-weighted:
+Do not run every cheap tool. Prefer direct source-of-record APIs for canonical facts, local inspection for project truth, and general discovery only when the target is not already known.
 
-- T3-only agreement never marks a claim `corroborated`, no matter how many T3 sources pile up — treat it as `single-source` strength until a T1/T2 confirms.
-- For source-of-record claims (the source *defines* the fact: an official price, a documented API limit, statute text), one T1 clears the bar — fetch it directly rather than corroborating aggregator echoes of it.
-- For empirical claims (performance, quality, market behavior), no single source clears a two-source bar, T1 included; independence across origins is what matters.
+### 4. Permit, Execute, Preserve
 
-**6 TERMINATE?** - Stop when load-bearing claims meet the contract, or when marginal gain is clearly below marginal cost, or when further spend exceeds the contract without a strong reason. If justified overspend would be large, check in with the user. At `decision` strictness, weigh marginal spend against the cost of a wrong recommendation, not against dollars already spent — frugality is the default posture, not the point of a decision run.
+Acquire the exact permit before the action:
 
-## Verification Floor
+```bash
+"$PY" scripts/research_state.py permit <session-dir> \
+  --action-id A1 --stage primary_scout \
+  --category host_retrieval --route host-web \
+  --count 1 --fingerprint sha256:<request> --json
+```
 
-Before delivery, independently spot-check the two or three most load-bearing claims: headline numbers, dates, official limits, or claims that would change the recommendation if wrong. Prefer host search/fetch when available; otherwise use a narrow worker probe. If verification is unavailable, say so plainly.
+One composite invocation reserves its full physical multiplicity atomically. A failed or uncertain outbound attempt consumes the permit. Retry only with another predeclared permit.
 
-Record the yield in the state's `verification:` line — checked N, flipped M. A high flip rate means the statuses upstream were optimistic; say so in delivery and discount the unchecked labels accordingly. This is the session's only calibration signal; do not hide it.
+Persist source or local bytes through typed ingestion. `artifact-add` accepts only `local_output`, `user_file`, or `fetched_source`. Provider and processor payloads require a bound adapter operation and cannot be relabelled through the generic CLI.
 
-Blind checks receive the claim exactly as recorded in state — no paraphrase, no confidence adverbs ("widely accepted", "clearly"). Rewording is how the Organizer's bias re-enters a blind pass.
+### 5. Reconcile
 
-For `decision` runs, verify the joints, not only the leaves: decompose the recommendation into its load-bearing premises and the inferences joining them (`A + B → C`), then check the weakest inference — most wrong recommendations die at a joint between true facts. Add one adversarial pass in a fresh context, giving it this argument map: `Argue that this recommendation is wrong: <premises + inference + recommendation>`. The Organizer that formed the hypothesis should not be its only judge; a surviving recommendation is stronger, a broken one just saved the user from it.
+Patch only the affected canonical sections with the expected revision. Every load-bearing claim must trace through:
 
-## Delivery
+`claim -> evidence -> source + source_origin -> immutable raw artifact`
 
-Deliver in the user's language, optimized for a future Agent or Claude/Codex session to continue from it.
+Use exact excerpts and byte offsets. Distinguish:
 
-Include:
+- source-origin independence;
+- retrieval-index diversity;
+- analyst-model diversity;
+- context independence.
 
-- executive answer
-- research contract and framing assumptions
-- key findings with evidence status
-- load-bearing claims and what would change the conclusion
-- verification checks with their yield (checked N / flipped M) and any status changes they caused
-- unresolved disputes and residual uncertainty
-- spend, ledger, state file, and report paths
-- recommendation, separated from evidence
-- handoff block: what to inspect next
+Only source origins establish empirical corroboration. One directly fetched T1 source may settle a source-of-record fact; one empirical study remains single-source.
 
-## Boundary Rules
+### 6. Reinforce After a Candidate Appears
 
-- **Organizer judgment**: framing, contract, branch choice, reconciliation, verification, stop condition.
-- **Host responsibility**: interpreter choice, writable artifact path, user questions, background execution, preserving resume tokens.
-- **Worker guarantees**: see [WORKERS.md](WORKERS.md) for stdout JSON, exit codes, ledger behavior, reports, resume, and rate limits.
-- **Privacy pause**: before sending local/user files to external workers, confirm they are safe to send or redact/summarize first.
-- **Failure honesty**: missing keys, weak citations, transport failures, and conflicts are state facts, not annoyances to hide.
+Medium/High scientific or decision runs perform:
+
+- **anti-lock-in:** seek evidence that would overturn the provisional candidate;
+- **coverage audit:** inspect omitted premises, boundary conditions, and candidate omissions;
+- **local applicability:** test project versions, environment, and constraints when feasible.
+
+High additionally requires a verifier with fresh context that receives the exact claim or argument packet, did not produce the candidate, and records `context_separated=true` and `produced_candidate=false`.
+
+### 7. Terminate Honestly
+
+Stop when the contract gates pass, when the next action has no material expected state delta, when quota is exhausted, or when the missing evidence is a user/vendor/local artifact that generic research cannot supply.
+
+## Canonical Artifacts
+
+Each session owns:
+
+| Artifact | Role |
+|---|---|
+| `state.json` | Only canonical semantic state |
+| `events.jsonl` | Hash-chained operational and revision journal |
+| `raw/` | Immutable, hashed, policy-gated source and local bytes |
+| `report.html` | Escaped deterministic projection bound to the state hash |
+
+Do not persist a second full Markdown report. The host can read canonical JSON directly; humans use HTML.
+
+Secret-classified data never enters raw storage. Local-sensitive artifacts require redaction review and never enter HTML. Provider payload retention and HTML inclusion must fit the session's immutable storage-rights snapshot.
+
+Purge is a semantic transition: downgrade affected claims and verdict first, persist authorization, remove bytes, leave a tombstone, validate, and rerender. Recovery only resumes that persisted authorization.
+
+## Gates
+
+`PASS` requires:
+
+- non-empty bounded decision and non-empty exact load-bearing claim set;
+- confirmed evidence floor;
+- passing claim status, source origin, entailing exact excerpt, available raw artifact, and applicability for every load-bearing claim;
+- quota/event/state hash reconciliation;
+- posture-specific checks;
+- Medium/High anti-lock-in and coverage audit when required;
+- context-separated High verifier;
+- current HTML state hash when a report exists.
+
+`PARTIAL` requires a named reversible safe action whose validity does not depend on unresolved or purged-evidence claims. Otherwise use `BLOCKED`.
+
+Run:
+
+```bash
+"$PY" scripts/research_state.py validate <session-dir> --json
+"$PY" scripts/research_state.py render <session-dir> --json
+```
+
+Never upgrade a verdict because HTML looks complete. Rendering an invalid state labels it `INVALID`.
+
+## Development Handoff
+
+The final chat and canonical state should make the next coding session cheaper. Include:
+
+- bounded answer and decision scope;
+- load-bearing claims, evidence status, dates, and flip conditions;
+- assumptions that must remain reversible;
+- safe next actions and prohibited hard dependencies;
+- project constraints, proposed local experiments, and acceptance tests;
+- disputes, research debt, quota use, and artifact paths;
+- what new evidence should trigger a revisit.
+
+## Recovery Commands
+
+```bash
+"$PY" scripts/research_state.py status <session-dir> --json
+"$PY" scripts/research_state.py recover <session-dir> --json
+"$PY" scripts/research_state.py artifact-purge <session-dir> \
+  --artifact-id A1 --reason "retention expired" \
+  --requested-status BLOCKED --json
+```
+
+Unowned malformed event bytes, conflicting purge metadata, unexpected paths, or missing hashes fail closed. Recovery never invents a deletion target or a research action.
