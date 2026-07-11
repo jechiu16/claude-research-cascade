@@ -77,6 +77,19 @@ class OpenAlexBuildTests(unittest.TestCase):
         spec = openalex.build("q", {"OPENALEX_API_KEY": "secret-value"})
         self.assertEqual(set(spec.headers), {"User-Agent"})
 
+    def test_fingerprint_excludes_api_key_but_preserves_query(self) -> None:
+        from research_harness.boundary import _request_fingerprint
+
+        first = _request_fingerprint(openalex.build("same query", {"OPENALEX_API_KEY": "key-one"}))
+        rotated = _request_fingerprint(
+            openalex.build("same query", {"OPENALEX_API_KEY": "key-two"})
+        )
+        changed_query = _request_fingerprint(
+            openalex.build("different query", {"OPENALEX_API_KEY": "key-two"})
+        )
+        self.assertEqual(first, rotated)
+        self.assertNotEqual(first, changed_query)
+
 
 class OpenAlexParseTests(unittest.TestCase):
     """parse() is pure: check it directly against edge-case payload shapes
@@ -347,6 +360,10 @@ class OpenAlexAdapterTests(unittest.TestCase):
                 environ=TEST_ENV,
             )
         self.assertEqual(self.attempt_statuses(), ["attempted", "failed"])
+        with self.assertRaises(QuotaExceeded):
+            acquire_permits(
+                self.session, "A2", "primary_scout", "probe", "openalex", 1, "fp2", NOW
+            )
 
     def test_timeout_marks_attempt_uncertain(self) -> None:
         with self.assertRaises(BoundaryError):
@@ -355,6 +372,10 @@ class OpenAlexAdapterTests(unittest.TestCase):
                 transport=failing_transport(socket.timeout("timed out")), environ=TEST_ENV,
             )
         self.assertEqual(self.attempt_statuses(), ["attempted", "uncertain"])
+        with self.assertRaises(QuotaExceeded):
+            acquire_permits(
+                self.session, "A2", "primary_scout", "probe", "openalex", 1, "fp2", NOW
+            )
 
     def test_second_execution_of_same_action_is_refused(self) -> None:
         # Any recorded attempt_status blocks a second execute_probe on the

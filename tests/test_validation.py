@@ -6,7 +6,7 @@ from pathlib import Path
 
 from research_harness.artifacts import ingest_fetched_source
 from research_harness.storage import apply_state_patch, load_state
-from research_harness.validation import validate_session
+from research_harness.validation import _validate_evidence, validate_session
 from tests.helpers import (
     NOW,
     append_valid_test_event_line,
@@ -69,6 +69,46 @@ class ValidationTests(unittest.TestCase):
         session = make_session_with_demo_evidence(self.root)
         report = validate_session(session)
         self.assertIn("evidence.demo_route_forbidden", {issue.code for issue in report.errors})
+
+    def test_discovery_only_provider_payload_cannot_support_evidence(self) -> None:
+        state = {
+            "evidence": [
+                {
+                    "id": "E1",
+                    "artifact_id": "A1",
+                    "source_id": "S1",
+                    "origin_id": "O1",
+                    "excerpt_start": 0,
+                    "excerpt_end": 7,
+                    "excerpt": "finding",
+                }
+            ],
+            "sources": [{"id": "S1", "origin_id": "O1"}],
+            "source_origins": [{"id": "O1"}],
+            "retrieval_occurrences": [],
+            "capabilities": {
+                "providers": [
+                    {
+                        "id": "openalex",
+                        "evidence_capabilities": {"can_support_claims": False},
+                    }
+                ]
+            },
+        }
+        artifacts = {
+            "A1": {
+                "availability": "available",
+                "provenance": {
+                    "origin_kind": "provider_payload",
+                    "provider_id": "openalex",
+                },
+            }
+        }
+        issues = []
+
+        _validate_evidence(state, artifacts, {"A1": b"finding"}, issues)
+
+        self.assertIn("evidence.provider_claims_forbidden", {issue.code for issue in issues})
 
     def test_high_pass_requires_context_separated_verifier(self) -> None:
         session = make_incomplete_session(self.root, "high", "decision", "PASS")

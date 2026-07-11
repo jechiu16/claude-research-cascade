@@ -20,12 +20,12 @@ def build(query: str, env: dict[str, str]) -> RequestSpec:
     key = env.get("OPENALEX_API_KEY")
     if not key:
         raise BoundaryError("OPENALEX_API_KEY is not set")
-    params = {
+    public_params = {
         "search": query,
         "per_page": PER_PAGE,
         "select": SELECT_FIELDS,
-        "api_key": key,
     }
+    params = {**public_params, "api_key": key}
     url = f"{BASE_URL}?{urllib.parse.urlencode(params)}"
     return RequestSpec(
         method="GET",
@@ -33,6 +33,7 @@ def build(query: str, env: dict[str, str]) -> RequestSpec:
         headers={"User-Agent": "research-harness-v2"},
         body=b"",
         timeout_s=30.0,
+        fingerprint_url=f"{BASE_URL}?{urllib.parse.urlencode(public_params)}",
     )
 
 

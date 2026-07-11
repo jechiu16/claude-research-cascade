@@ -68,6 +68,7 @@ class RequestSpec:
     headers: dict[str, str]
     body: bytes
     timeout_s: float
+    fingerprint_url: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -93,13 +94,31 @@ def _adapters() -> dict[str, dict[str, Any]]:
 Transport = Callable[[RequestSpec], tuple[int, bytes]]
 
 
+def _request_fingerprint(spec: RequestSpec) -> str:
+    """Hash semantic request bytes while excluding credential-bearing URL parts."""
+
+    return sha256_hex(
+        {
+            "method": spec.method.upper(),
+            "url": spec.fingerprint_url or spec.url,
+            "body": spec.body.decode("utf-8"),
+        }
+    )
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _urllib_transport(spec: RequestSpec) -> tuple[int, bytes]:
     # body=b"" means "no body": pass None so a GET stays truly bodyless
     # (data=b"" would still attach Content-Length/Content-Type headers).
     request = urllib.request.Request(
         spec.url, data=spec.body or None, headers=spec.headers, method=spec.method
     )
-    with urllib.request.urlopen(request, timeout=spec.timeout_s) as response:
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    with opener.open(request, timeout=spec.timeout_s) as response:
         return response.status, response.read()
 
 
@@ -348,7 +367,7 @@ def execute_probe(
 
         spec = adapter["build"](query.strip(), env)
         # Fingerprint binds the attempt to the exact request without leaking auth.
-        fingerprint = sha256_hex({"url": spec.url, "body": spec.body.decode("utf-8")})
+        fingerprint = _request_fingerprint(spec)
         wall_cap = state["contract"]["resource_envelope"]["external"].get("max_wall_time_seconds")
         timeout = min(spec.timeout_s, wall_cap) if isinstance(wall_cap, int) else spec.timeout_s
         spec = RequestSpec(spec.method, spec.url, spec.headers, spec.body, float(timeout))
@@ -448,7 +467,7 @@ def execute_deep_submit(
 
         spec = adapter["submit"](query, env)
         # Fingerprint binds the attempt to the exact paid request without leaking auth.
-        fingerprint = sha256_hex({"url": spec.url, "body": spec.body.decode("utf-8")})
+        fingerprint = _request_fingerprint(spec)
         query_hash = sha256_hex(query)
 
         _record_attempt_status_unlocked(
@@ -578,7 +597,7 @@ def execute_deep_poll(
 
         token = _job_token_for(events, deep_action_id)
         spec = adapter["poll"](token, env)
-        poll_fingerprint = sha256_hex({"url": spec.url, "body": spec.body.decode("utf-8")})
+        poll_fingerprint = _request_fingerprint(spec)
 
         _record_attempt_status_unlocked(
             session_dir, poll_action_id, "attempted", now, {"fingerprint": poll_fingerprint}

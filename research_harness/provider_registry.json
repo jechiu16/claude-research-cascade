@@ -267,14 +267,14 @@
       "upstream_provider": "semantic-scholar",
       "retrieval_shape": ["paper-metadata", "citation-graph"],
       "evidence_capabilities": {"can_support_claims": false, "requires_direct_fetch": true},
-      "controls": {"domain_filter": "not_applicable", "date_filter": "available-unused", "max_results": "limit-param"},
+      "controls": {"domain_filter": "not_applicable", "date_filter": "available-unused", "max_results": "per_page-param"},
       "metering": {"unit": "request", "list_price": "free (shared pool; optional S2_API_KEY raises limits)", "verified_at": "2026-07-11"},
       "transport": {"mode": "sync", "polling": "not_applicable"},
       "privacy": {"local_file_egress": false, "zdr": "unknown"},
       "storage_rights": {
         "payload_retention": "session",
         "html_allowed": false,
-        "allowed_operational_fields": ["query_hash", "request_count", "citation_count"],
+        "allowed_operational_fields": ["query_hash", "request_count", "cost_usd", "citation_count"],
         "verified_at": "2026-07-11",
         "source": "https://api.semanticscholar.org/api-docs/ (public metadata API)"
       },

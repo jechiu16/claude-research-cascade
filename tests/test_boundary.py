@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import json
+import http.server
 import socket
 import tempfile
+import threading
 import unittest
 import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from research_harness.boundary import AdapterParseError, BoundaryError, execute_probe
+from research_harness.boundary import (
+    AdapterParseError,
+    BoundaryError,
+    RequestSpec,
+    _urllib_transport,
+    execute_probe,
+)
 from research_harness.quota import QuotaExceeded, acquire_permits
 from research_harness.state import new_state
 from research_harness.storage import create_session, load_state, read_events
@@ -17,6 +25,24 @@ from tests.helpers import NOW, confirmed_demo_contract
 
 FIXTURES = Path(__file__).with_name("fixtures")
 TEST_ENV = {"PERPLEXITY_API_KEY": "test-key"}
+
+
+class RedirectHandler(http.server.BaseHTTPRequestHandler):
+    request_count = 0
+
+    def do_GET(self) -> None:
+        type(self).request_count += 1
+        if self.path == "/start":
+            self.send_response(302)
+            self.send_header("Location", "/final")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"followed")
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
 
 
 def fixture_transport(name: str, status: int = 200):
@@ -154,6 +180,28 @@ class BoundaryTests(unittest.TestCase):
                 transport=fixture_transport("sonar_success.json"), environ={},
             )
         self.assertEqual(self.attempt_statuses(), [])
+
+    def test_transport_refuses_redirect_without_second_physical_request(self) -> None:
+        RedirectHandler.request_count = 0
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        spec = RequestSpec(
+            "GET",
+            f"http://127.0.0.1:{server.server_port}/start",
+            {},
+            b"",
+            2.0,
+        )
+
+        with self.assertRaises(urllib.error.HTTPError) as raised:
+            _urllib_transport(spec)
+
+        self.assertEqual(raised.exception.code, 302)
+        self.assertEqual(RedirectHandler.request_count, 1)
 
 
 if __name__ == "__main__":

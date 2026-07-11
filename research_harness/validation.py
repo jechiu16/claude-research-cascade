@@ -324,6 +324,19 @@ def _validate_evidence(
         artifact = artifacts.get(artifact_id)
         if artifact is None:
             _add(issues, "evidence.artifact_missing", "evidence artifact record is missing", path)
+        provenance = artifact.get("provenance", {}) if artifact is not None else {}
+        if provenance.get("origin_kind") == "provider_payload":
+            provider = providers.get(provenance.get("provider_id"))
+            if (
+                provider is None
+                or provider.get("evidence_capabilities", {}).get("can_support_claims") is not True
+            ):
+                _add(
+                    issues,
+                    "evidence.provider_claims_forbidden",
+                    "this provider payload cannot support canonical claims",
+                    path,
+                )
         payload = raw_payloads.get(artifact_id)
         start = evidence.get("excerpt_start")
         end = evidence.get("excerpt_end")
