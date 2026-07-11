@@ -249,7 +249,14 @@
     },
     {
       "id": "scholar",
-      "adapter": "legacy-semantic-scholar",
+      "adapter": "semantic-scholar-graph-search",
+      "adapter_version": "v1",
+      "enabled": false,
+      "execution_binding": "v2_request_boundary",
+      "adoption_status": "baseline",
+      "adoption_evidence": [
+        "fixture-replay-suite-tests-test_scholar"
+      ],
       "roles": ["scholarly-scout"],
       "action_categories": ["probe"],
       "stage_capabilities": ["primary_scout", "verification"],
@@ -258,8 +265,21 @@
       "index_provenance": "scholarly-index",
       "upstream_provider": "semantic-scholar",
       "retrieval_shape": ["paper-metadata", "citation-graph"],
+      "evidence_capabilities": {"can_support_claims": false, "requires_direct_fetch": true},
+      "controls": {"domain_filter": "not_applicable", "date_filter": "available-unused", "max_results": "limit-param"},
+      "metering": {"unit": "request", "list_price": "free (shared pool; optional S2_API_KEY raises limits)", "verified_at": "2026-07-11"},
+      "transport": {"mode": "sync", "polling": "not_applicable"},
+      "privacy": {"local_file_egress": false, "zdr": "unknown"},
+      "storage_rights": {
+        "payload_retention": "session",
+        "html_allowed": false,
+        "allowed_operational_fields": ["query_hash", "request_count", "citation_count"],
+        "verified_at": "2026-07-11",
+        "source": "https://api.semanticscholar.org/api-docs/ (public metadata API)"
+      },
       "required_env": [],
-      "docs_url": "https://api.semanticscholar.org/api-docs/"
+      "docs_url": "https://api.semanticscholar.org/api-docs/",
+      "docs_verified_at": "2026-07-11"
     },
     {
       "id": "perplexity",
