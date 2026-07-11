@@ -512,13 +512,13 @@
       "id": "exa",
       "adapter": "exa-search",
       "adapter_version": "v1",
-      "enabled": false,
+      "enabled": true,
       "execution_binding": "v2_request_boundary",
-      "adoption_status": "validated",
+      "adoption_status": "baseline",
       "adoption_evidence": [
         "fixture-replay-suite-tests-test_exa",
         "live-occurrence-2026-07-11-exa-auto-highlights (cost 0.007, 10 citations)",
-        "enablement-pending-paired-independent-index-benchmark"
+        "paired-benchmark-2026-07-11-exa-vs-brave-5-query-10-call (48 Exa citations, 28 Exa-unique, Exa reported cost 0.035)"
       ],
       "roles": ["semantic-scout"],
       "action_categories": ["probe"],

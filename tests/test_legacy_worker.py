@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import types
 import unittest
@@ -49,8 +50,11 @@ class GeminiWorkerTests(unittest.TestCase):
 
     @mock.patch("importlib.metadata.version", return_value="1.70.0")
     def test_client_rejects_legacy_sdk(self, _version: mock.Mock) -> None:
-        with self.assertRaisesRegex(RuntimeError, "too old"):
-            deep_research._gemini_client()
+        google = types.ModuleType("google")
+        google.genai = types.SimpleNamespace()
+        with mock.patch.dict(sys.modules, {"google": google}):
+            with self.assertRaisesRegex(RuntimeError, "too old"):
+                deep_research._gemini_client()
 
 
 class WorkerLedgerTests(unittest.TestCase):

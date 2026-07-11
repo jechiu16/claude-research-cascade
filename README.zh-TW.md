@@ -99,7 +99,7 @@ flowchart TD
 
 ## Route Status
 
-[`research_harness/provider_registry.json`](research_harness/provider_registry.json) 是 capability 與 policy ledger，不是 pipeline。`.env` 裡有 key 只代表這條 route *eligible*，不代表它 *enabled*。只要 `enabled: true` 的 route 缺少真正的 adapter binding、active 的 lifecycle，或者（external `v2_request_boundary` route 的話）沒有非空 adoption evidence，registry validation 就會 hard-fail。目前 enabled 的 external route 是 `sonar`、`github`、`pypi`、`scholar`、`openalex`、`crossref`、`nvd`、`europe-pmc`、`ietf`、`osv`、`brave`，以及 async 的 `perplexity` deep-engine route。`exa` 已接上相同 boundary 並通過 fixture/live validation，但在獨立索引 paired benchmark 完成前仍預設 disabled。下面其他 route 仍是未採用的 candidate。
+[`research_harness/provider_registry.json`](research_harness/provider_registry.json) 是 capability 與 policy ledger，不是 pipeline。`.env` 裡有 key 只代表這條 route *eligible*，不代表它 *enabled*。只要 `enabled: true` 的 route 缺少真正的 adapter binding、active 的 lifecycle，或者（external `v2_request_boundary` route 的話）沒有非空 adoption evidence，registry validation 就會 hard-fail。目前 enabled 的 external route 是 `sonar`、`github`、`pypi`、`scholar`、`openalex`、`crossref`、`nvd`、`europe-pmc`、`ietf`、`osv`、`brave`、`exa`，以及 async 的 `perplexity` deep-engine route。Exa 在五題 paired benchmark 顯示實質獨立索引增益後，作為 anti-lock-in／verification 選項啟用；Brave 仍是預設 general scout。其他 external worker route 維持 disabled，直到通過相同 gate。
 
 透過 `research_harness.providers.load_provider_registry()`（跟 runtime 用的是同一個 loader）讀出 registry，印出每筆記錄的 `id`、`roles`、`index_family`、`enabled`、`execution_binding` 產生：
 
@@ -110,6 +110,7 @@ flowchart TD
 | `demo-cascade` | contract-test | demo | yes | `no_network_demo` |
 | `demo-probe` | contract-test | demo | yes | `no_network_demo` |
 | `europe-pmc` | biomedical-scout | europe-pmc | yes | `v2_request_boundary` |
+| `exa` | semantic-scout | exa | yes | `v2_request_boundary` |
 | `github` | source-of-record | github | yes | `v2_request_boundary` |
 | `host` | organizer, auditor | not_applicable | yes | `host_native_observed` |
 | `host-web` | scout, verifier, fetch | host-opaque | yes | `host_native_observed` |
@@ -124,7 +125,6 @@ flowchart TD
 | `sonar` | scout, challenge | perplexity-aggregated | yes | `v2_request_boundary` |
 | `cascade` | composite-scout | perplexity-aggregated | no | `legacy_unbound` |
 | `deepseek` | processor, blind-auditor | not_applicable | no | `legacy_unbound` |
-| `exa` | semantic-scout | exa | no | `v2_request_boundary` |
 | `firecrawl` | fetch | not_applicable | no | `legacy_unbound` |
 | `gemini` | investigation | google | no | `legacy_unbound` |
 | `jina` | fetch | not_applicable | no | `legacy_unbound` |
@@ -132,9 +132,9 @@ flowchart TD
 | `openai` | investigation | openai-model-mediated | no | `legacy_unbound` |
 | `test-only-unbound-candidate` | candidate | unknown | no | `legacy_unbound` |
 
-*26 個已登記 route 中有 17 個 enabled，as of commit `c808c4b`。*
+*26 個已登記 route 中有 18 個 enabled。Exa adoption evidence 摘要見 [`docs/benchmarks/2026-07-11-exa-vs-brave.md`](docs/benchmarks/2026-07-11-exa-vs-brave.md)。*
 
-其餘的 adoption 順序——先做 Exa 對比其他獨立索引的 benchmark，最後只有在實測 fetch failure 後才上 Jina/Firecrawl——記錄在 [`docs/superpowers/specs/2026-07-10-provider-portfolio-design.md`](docs/superpowers/specs/2026-07-10-provider-portfolio-design.md)。
+其餘的 adoption 順序——只有在實測 fetch failure 後才上 Jina/Firecrawl——記錄在 [`docs/superpowers/specs/2026-07-10-provider-portfolio-design.md`](docs/superpowers/specs/2026-07-10-provider-portfolio-design.md)。
 
 ## Credentials and Spend
 

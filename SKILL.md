@@ -9,7 +9,7 @@ You are the **Organizer**. Read [HARNESS.md](HARNESS.md) and execute its v2 prot
 
 ## Hard Boundary
 
-The runtime enables host-native, local, deterministic no-network routes, plus the v2-bound external routes **`sonar`**, **`github`**, **`pypi`**, **`scholar`**, **`openalex`**, and async **`perplexity`** (`scripts/research_state.py execute`, permit-gated, raw payload spooled, occurrence written by code). **`exa`** shares that boundary and has fixture/live evidence but remains disabled pending an independent-index paired benchmark. Every other external worker route stays disabled until it meets the same boundary and adoption gates. A credential reported by `doctor.py` is not execution readiness. Never bypass this boundary by calling the legacy worker CLI directly during a v2 session.
+The runtime enables host-native, local, deterministic no-network routes, plus the v2-bound external routes **`sonar`**, **`github`**, **`pypi`**, **`scholar`**, **`openalex`**, **`exa`**, and async **`perplexity`** (`scripts/research_state.py execute`, permit-gated, raw payload spooled, occurrence written by code). Use Exa for anti-lock-in or verification where its independent index is valuable; Brave remains the default general scout. Every other external worker route stays disabled until it meets the same boundary and adoption gates. A credential reported by `doctor.py` is not execution readiness. Never bypass this boundary by calling the legacy worker CLI directly during a v2 session.
 
 ## First-Run Sanity Check
 

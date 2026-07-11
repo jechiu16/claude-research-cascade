@@ -19,6 +19,8 @@ The current package version is the `2.0.0b1` release candidate. A matching
 - Ruff correctness and import-hygiene checks in local and hosted release gates.
 - A tag-version-locked GitHub prerelease workflow that uploads verified wheel
   and source distributions.
+- Exa enabled as an anti-lock-in and verification route after a bounded paired
+  benchmark demonstrated material unique-index gain over Brave.
 
 ### Fixed
 

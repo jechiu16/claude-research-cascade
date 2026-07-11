@@ -10,7 +10,7 @@ The runtime improves reliability by making unsupported success mechanically diff
 
 ## Current Boundary
 
-The runtime enables host-native retrieval, local inspection, Organizer passes, deterministic no-network test routes, and the v2-bound external routes `sonar`, `github`, `pypi`, `scholar`, `openalex`, and async `perplexity` (permits, spooled raw payloads, code-written occurrences). `exa` has the same boundary plus fixture/live evidence but remains disabled pending an independent-index paired benchmark. Every other external network worker and processor route is **disabled** in `provider_registry.json` until its adapter:
+The runtime enables host-native retrieval, local inspection, Organizer passes, deterministic no-network test routes, and the v2-bound external routes `sonar`, `github`, `pypi`, `scholar`, `openalex`, `exa`, and async `perplexity` (permits, spooled raw payloads, code-written occurrences). Exa is an independent-index anti-lock-in or verification route; Brave remains the default general scout. Every other external network worker and processor route is **disabled** in `provider_registry.json` until its adapter:
 
 1. uses the common v2 request boundary for every outbound request;
 2. has deterministic request, error, recovery, provenance, and storage-rights fixtures;
