@@ -284,18 +284,54 @@
     },
     {
       "id": "perplexity",
-      "adapter": "legacy-perplexity-deep-research",
+      "adapter": "perplexity-async-sonar",
+      "adapter_version": "v1",
+      "enabled": false,
+      "execution_binding": "v2_request_boundary",
+      "adoption_status": "not_tested",
+      "adoption_evidence": [],
       "roles": ["investigation"],
-      "action_categories": ["deep"],
+      "action_categories": ["deep", "transport"],
       "stage_capabilities": ["investigation", "anti_lock_in"],
-      "request_multiplicity": {"deep": 1},
+      "request_multiplicity": {"deep": 1, "transport": 1},
       "index_family": "perplexity-aggregated",
       "index_provenance": "hybrid-opaque",
       "upstream_provider": "perplexity",
-      "retrieval_shape": ["long-cited-report"],
-      "transport": {"mode": "sync", "polling": "not_applicable"},
+      "retrieval_shape": ["cited-synthesis"],
+      "evidence_capabilities": {
+        "can_support_claims": false,
+        "requires_direct_fetch": true
+      },
+      "controls": {
+        "domain_filter": "unknown",
+        "date_filter": "unknown",
+        "max_results": "not_applicable"
+      },
+      "metering": {
+        "unit": "request",
+        "list_price": "provider-reported usage.cost.total_cost",
+        "verified_at": "2026-07-11"
+      },
+      "transport": {"mode": "async", "polling": "required"},
+      "privacy": {
+        "local_file_egress": false,
+        "zdr": "unknown"
+      },
+      "storage_rights": {
+        "payload_retention": "session",
+        "html_allowed": false,
+        "allowed_operational_fields": [
+          "query_hash",
+          "job",
+          "cost_usd",
+          "citation_count"
+        ],
+        "verified_at": "2026-07-11",
+        "source": "https://docs.perplexity.ai/ (async job output; conservative session-only local retention, same posture as sonar)"
+      },
       "required_env": ["PERPLEXITY_API_KEY"],
-      "docs_url": "https://docs.perplexity.ai/"
+      "docs_url": "https://docs.perplexity.ai/",
+      "docs_verified_at": "2026-07-11"
     },
     {
       "id": "openai",

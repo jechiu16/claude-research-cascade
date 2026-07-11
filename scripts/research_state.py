@@ -19,7 +19,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from research_harness.artifacts import ingest_fetched_source, ingest_local_artifact
-from research_harness.boundary import execute_probe
+from research_harness.boundary import (
+    execute_deep_poll,
+    execute_deep_submit,
+    execute_deep_timeout,
+    execute_probe,
+)
 from research_harness.contracts import (
     contract_card_sha256,
     normalize_contract,
@@ -36,7 +41,7 @@ from research_harness.providers import (
 from research_harness.quota import acquire_permits, permit_usage
 from research_harness.rendering import render_session_result
 from research_harness.state import new_state, state_sha256
-from research_harness.storage import apply_state_patch, create_session, load_state
+from research_harness.storage import apply_state_patch, create_session, load_state, read_events
 from research_harness.validation import validate_session
 
 
@@ -302,6 +307,68 @@ def command_execute(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     return result, 0
 
 
+def command_deep_submit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    result = execute_deep_submit(
+        Path(args.session),
+        args.action_id,
+        args.query,
+        args.now or _now(),
+    )
+    return result, 0
+
+
+def command_deep_poll(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    result = execute_deep_poll(
+        Path(args.session),
+        args.action_id,
+        args.poll_action_id,
+        args.now or _now(),
+    )
+    return result, 0
+
+
+def command_deep_timeout(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    result = execute_deep_timeout(
+        Path(args.session),
+        args.action_id,
+        args.now or _now(),
+    )
+    return result, 0
+
+
+def command_deep_pending(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    """Free (no lock, no permit): scan the journal for deep actions that are
+    accepted or uncertain (submitted but not yet terminal) and print their
+    job tokens so an operator can decide whether to keep polling or resume."""
+
+    events, errors = read_events(Path(args.session))
+    if errors:
+        raise ValueError("event history is malformed: " + "; ".join(errors))
+    deep_actions: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.get("event") == "permit_acquired" and event.get("category") == "deep":
+            action_id = event.get("action_id")
+            if isinstance(action_id, str):
+                deep_actions[action_id] = {"route": event.get("route"), "status": "acquired", "job": None}
+    for event in events:
+        if event.get("event") != "attempt_status":
+            continue
+        action_id = event.get("action_id")
+        if action_id not in deep_actions:
+            continue
+        deep_actions[action_id]["status"] = event.get("status")
+        details = event.get("details") or {}
+        job = details.get("job")
+        if isinstance(job, str):
+            deep_actions[action_id]["job"] = job
+    pending = [
+        {"action_id": action_id, **info}
+        for action_id, info in sorted(deep_actions.items())
+        if info["status"] in {"accepted", "uncertain"}
+    ]
+    return {"pending": pending}, 0
+
+
 def command_status(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     state = load_state(Path(args.session))
     validation = validate_session(Path(args.session))
@@ -479,6 +546,45 @@ def build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--now")
     _add_json_flag(execute)
     execute.set_defaults(handler=command_execute)
+
+    deep_submit = subparsers.add_parser(
+        "deep-submit", help="submit an async deep-research job (paid POST, never retried)"
+    )
+    deep_submit.add_argument("session")
+    deep_submit.add_argument("--action-id", required=True, help="an acquired, un-attempted deep permit action")
+    deep_submit.add_argument("--query", required=True)
+    deep_submit.add_argument("--now")
+    _add_json_flag(deep_submit)
+    deep_submit.set_defaults(handler=command_deep_submit)
+
+    deep_poll = subparsers.add_parser(
+        "deep-poll", help="one physical poll of an accepted/uncertain deep job"
+    )
+    deep_poll.add_argument("session")
+    deep_poll.add_argument("--action-id", required=True, help="the deep action being polled")
+    deep_poll.add_argument(
+        "--poll-action-id", required=True, help="a freshly acquired transport permit action"
+    )
+    deep_poll.add_argument("--now")
+    _add_json_flag(deep_poll)
+    deep_poll.set_defaults(handler=command_deep_poll)
+
+    deep_timeout = subparsers.add_parser(
+        "deep-timeout",
+        help="free wall-clock check: move an accepted deep action to uncertain past its contract cap",
+    )
+    deep_timeout.add_argument("session")
+    deep_timeout.add_argument("--action-id", required=True)
+    deep_timeout.add_argument("--now")
+    _add_json_flag(deep_timeout)
+    deep_timeout.set_defaults(handler=command_deep_timeout)
+
+    deep_pending = subparsers.add_parser(
+        "deep-pending", help="free: list accepted/uncertain deep actions and their job tokens"
+    )
+    deep_pending.add_argument("session")
+    _add_json_flag(deep_pending)
+    deep_pending.set_defaults(handler=command_deep_pending)
 
     status = subparsers.add_parser("status", help="show canonical status and quota use")
     status.add_argument("session")
