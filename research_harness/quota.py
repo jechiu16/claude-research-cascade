@@ -181,11 +181,26 @@ def acquire_permits(
         ]
 
 
+# Keys are the CURRENT status; values are the statuses a transition may
+# move TO from there (from_status -> {allowed to_status, ...}).
+#
+# "uncertain" is reached two ways: attempted -> uncertain (sync timeout-
+# after-send, or an async submit/poll transport timeout — never retried,
+# ambiguous whether the provider processed it) and accepted -> uncertain
+# (async wall-clock exhaustion: execute_deep_timeout, no physical request).
+# In both cases the permit stays consumed; nothing here refunds.
+#
+# uncertain -> accepted is the resume transition: the ONLY way out of
+# uncertain. It is journaled with details {"resume": true} by
+# execute_deep_poll itself (there is no separate resume verb) the moment a
+# poll is attempted against an uncertain deep action, then normal polling
+# continues under a freshly acquired transport permit.
 ATTEMPT_TRANSITIONS = {
     "acquired": {"attempted"},
     "attempted": {"accepted", "failed", "uncertain"},
-    "accepted": {"completed", "failed", "interrupted"},
+    "accepted": {"completed", "failed", "interrupted", "uncertain"},
     "interrupted": {"completed", "failed"},
+    "uncertain": {"accepted"},
 }
 
 
