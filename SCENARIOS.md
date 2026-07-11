@@ -1,90 +1,78 @@
-# /deep Scenario Calibration
+# Agent Deep Research Trigger — Scenario Calibration
 
-Read this when validating the skill, tuning behavior, or when the Organizer is unsure how strict a `/deep` run should be. These are behavior calibrations, not pipelines.
+Use these scenarios to evaluate Organizer behavior. They are posture and tier
+calibrations, not fixed provider pipelines.
 
-## Expected Postures
+## Expected decisions
 
-| Scenario | Expected Organizer posture |
-|---|---|
-| `/deep quick fact check` | Infer framing, ask the three-axis contract, recommend `fast`, use one narrow source or lookup if confirmed, deliver with evidence status. |
-| `/deep` after a long conversation | Infer the research target from the conversation; ask framing questions only if multiple targets are plausible; still ask the three-axis contract. |
-| `/deep literature review` | Recommend at least `standard`, include `scholar`, keep paper claims separate from model summaries, avoid over-trusting citation counts. |
-| `/deep decision-critical research` | Recommend `decision`, require cross-family evidence and at least one blind isolated verification pass for load-bearing claims. |
-| `/deep market or product research` | Mix current web evidence with source-of-record checks; prices, policies, and availability need fresh verification. |
-| `/deep with missing API keys` | Name missing keys, use available host-native tools or free workers, record substitutions in state/log. |
-| `/deep local files plus web context` | Pause before sending local files externally; prefer host-side extraction unless the user approves egress. |
-| Conflicting sources | Promote the claim to `disputed`, state what would settle it, and spend only if the dispute is load-bearing. |
-| Host session crashed mid-`/deep` | Run `--list-pending`, harvest pending tokens with `--resume`, reconcile the ledger, then continue under the same contract — never re-submit paid work. |
+| Scenario | Posture | Typical tier | Required behavior |
+|---|---|---|---|
+| `/deep What license does this repo use?` | `lookup` | `low` | Prefer the local source of record; do not broaden the question |
+| `/deep Summarize the literature on RAG hallucination` | `synthesis` | `medium` | Use scholarly discovery, separate paper claims from model summaries, audit coverage |
+| `/deep Which mechanism explains this regression?` | `scientific` | `medium` or `high` | Preserve competing hypotheses and seek a discriminating observation |
+| `/deep Should we approve this vendor for healthcare support?` | `decision` | `high` | Verify load-bearing premises across source families and use context-separated verification |
+| `/deep` after a long conversation | inferred | inferred | Infer the likely target; ask only when ambiguity would change the contract |
+| Missing provider keys | unchanged | unchanged | Show the unavailable route and offer a contract-preserving substitution |
+| Local files plus web context | task-dependent | task-dependent | Obtain explicit external-egress authority before sending local content |
+| Conflicting sources | unchanged | unchanged | Mark the claim disputed and spend only if the dispute is load-bearing |
+| Host crash during async research | unchanged | unchanged | Recover the session and resume the accepted job; never resubmit the paid request |
 
-## Mini State Example
+## Required interaction shape
 
-```md
-# Research State: Should we adopt Tool X for regulated customer support?
-contract: depth=medium | independence=two-source | strictness=gaps | status=running | started=2026-07-09T10:00:00
-framing: evaluate fit for regulated support teams; exclude general marketing claims
-current hypothesis: promising for triage, unresolved on audit logging and data retention
-next cheapest action: verify audit-log claims against official docs and one customer/security review
+Every scenario follows the same boundary:
 
-## Spend
-running total: $0.11
-| # | action | worker | actual$ | artifact |
-| 1 | orientation | cascade | $0.11 | reports/deep_..._tool_x.md |
+1. The literal `/deep` trigger identifies the research target.
+2. The Organizer recommends a posture and tier, then shows exact physical
+   request ceilings, route choices, reserves, and cost uncertainty.
+3. `prepare` produces the normalized card plus card, registry, and referenced
+   route-record hashes.
+4. Nothing external runs before explicit confirmation of those hashes.
+5. Each action acquires its exact permit before using a host, local, sync, or
+   async route.
+6. Semantic truth lives only in canonical `state.json`; events and raw bytes
+   retain their own operational roles.
+7. `validate` must pass before `render` can deliver a `PASS` report.
 
-## Load-Bearing Claims
-| id | claim | why it matters | status | next check |
-| C1 | Tool X supports immutable audit logs | compliance blocker | single-source | fetch official security docs |
-| C2 | Tool X stores data in-region | procurement blocker | disputed | compare official docs and DPA |
-
-## Evidence Pool
-| id | claim | status | sources | independence | as-of |
-| E1 | audit logs available on enterprise plan | single-source | cascade -> report path [T3] | Perplexity | 2026-07-09 |
-
-## Open
-gaps: pricing tier, retention period, export format
-disputes: C2 needs official DPA or support statement
-
-## Log
-- 1: chose cascade because the question needed broad orientation before targeted verification
-```
-
-## Evaluation Prompts
-
-Use these to forward-test whether the skill activates the right behavior without leaking expected answers.
-
-For complete expected-session examples, see [examples/transcripts](examples/transcripts). Validate them with:
-
-```bash
-python scripts/validate_transcripts.py
-```
+## Evaluation prompts
 
 ```text
-/deep Compare whether SQLite or DuckDB is the better default for local analytics in a Python desktop app.
+/deep Compare SQLite and DuckDB as the default local analytics engine for a
+Python desktop application.
 ```
 
-Pass condition: asks the three-axis contract, recommends a reasonable preset, uses current/contextual evidence if spending proceeds, and separates recommendation from evidence.
+Pass condition: recommends a decision-appropriate bounded contract, checks
+local applicability, separates evidence from inference, and names a flip
+condition.
 
 ```text
-/deep
+/deep What does the literature say about whether retrieval-augmented generation
+reduces hallucinations in question-answering systems?
 ```
 
-Pass condition: infers the likely research target from the conversation if available; asks a framing question only if target ambiguity matters; still asks the mandatory contract.
+Pass condition: uses a synthesis posture, distinguishes discovery metadata from
+direct evidence, audits source concentration, and keeps unresolved disputes.
 
 ```text
-/deep Is this vendor safe enough for a healthcare workflow?
+/deep Is this AI vendor safe enough for a HIPAA-adjacent support workflow?
 ```
 
-Pass condition: recommends `decision`, requires cross-family or source-of-record evidence for compliance/security claims, marks unresolved claims explicitly.
+Pass condition: recommends a high decision tier, verifies compliance and data
+handling claims against source-of-record material, and requires a
+context-separated verifier before `PASS`.
 
-## Anti-Patterns
+## Anti-patterns
 
-- Starting worker calls before the three-axis contract is confirmed.
-- Treating `cascade` or a deep report as the verdict.
-- Running one worker at a time when independent checks can be batched.
-- Chasing every interesting question instead of load-bearing uncertainty.
-- Hiding missing keys, weak citations, or verification failures.
-- Sending local/user files to external workers without a privacy pause.
-- Re-submitting a paid async job while the ledger holds an unharvested resume token.
-- Treating unanimous cross-engine agreement as independence without checking for a shared upstream source.
-- Handing the blind-check agent the state file or current hypothesis — that is not blind.
-- Counting a pile of aggregators as corroboration: T3-only agreement never clears the bar.
-- Paraphrasing a claim for its blind check with confidence adverbs — pass it verbatim as recorded in state.
+- Triggering on ordinary research language when the user did not type `/deep`.
+- Executing any external or paid action before exact contract confirmation.
+- Treating a key or legacy CLI as execution readiness.
+- Using more than one primary scout without a confirmed High/custom envelope.
+- Refunding a failed or uncertain physical request.
+- Resubmitting an accepted async job instead of resuming its provider token.
+- Treating model agreement or shared aggregators as source independence.
+- Letting the Organizer write retrieval occurrences as prose.
+- Maintaining a second full Markdown state beside canonical `state.json`.
+- Delivering `PASS` when validation is false or lineage is incomplete.
+
+The files under `examples/transcripts/` are retained legacy compatibility
+fixtures. Current V2 acceptance evidence lives in the unit tests and the
+no-network demo path.

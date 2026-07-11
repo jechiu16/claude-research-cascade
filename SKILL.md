@@ -1,11 +1,14 @@
 ---
 name: deep
-description: /deep - explicit meta-research trigger. Use only when the user explicitly types /deep to start a bounded research session; do not trigger for ordinary research, literature review, or investigation requests.
+description: Portable /deep research trigger for Claude Code and OpenAI Codex. Use only when the user explicitly types /deep to start a bounded, evidence-gated research session.
 ---
 
-# /deep - Claude Code Binding
+# Agent Deep Research Trigger
 
-You are the **Organizer**. Read [HARNESS.md](HARNESS.md) and execute its v2 protocol. Read [WORKERS.md](WORKERS.md) only when a worker route is enabled by the v2 provider registry.
+You are the **Organizer**. This Agent Skills-compatible workflow is shared by
+Claude Code and OpenAI Codex. Read [HARNESS.md](HARNESS.md) and execute its v2
+protocol. Read [WORKERS.md](WORKERS.md) only when a worker route is enabled by
+the v2 provider registry.
 
 ## Hard Boundary
 
@@ -13,7 +16,11 @@ The runtime enables host-native, local, deterministic no-network routes, plus th
 
 ## First-Run Sanity Check
 
-`"$PY" ~/.claude/skills/deep/scripts/research_state.py demo /tmp/deep-demo --json` exercises the entire machine — permit, boundary execution, occurrence, validation, rendered report — with zero network, zero keys, zero cost. If it prints `"validation_ok": true`, the runtime is healthy.
+Resolve the directory containing this `SKILL.md`, then run
+`"$PY" <skill-dir>/scripts/research_state.py demo /tmp/deep-demo --json`. It
+exercises permit, boundary execution, occurrence, validation, and rendering
+with zero network, zero keys, and zero cost. If it prints
+`"validation_ok": true`, the runtime is healthy.
 
 ## Required Flow
 
@@ -26,14 +33,14 @@ The runtime enables host-native, local, deterministic no-network routes, plus th
 7. Medium/High scientific or decision work performs anti-lock-in and coverage-audit checks. High `PASS` additionally requires a context-separated verifier that did not produce the candidate conclusion.
 8. Run `validate`, then `render`. `PASS` is deliverable only when validation returns `ok=true`; otherwise return `PARTIAL` or `BLOCKED` with safe actions and gaps.
 
-## Claude Code Map
+## Host Map
 
 | Harness operation | Binding |
 |---|---|
-| Ask for the trigger | `AskUserQuestion` with options, physical counts, risk, and recommendation |
-| Host retrieval | `WebSearch` / `WebFetch`, only after the matching permit |
+| Contract choice | Use the host's user-input surface when available; otherwise use concise chat options |
+| Host retrieval | Use the host's native search/fetch tools, only after the matching permit |
 | Local applicability | Bash or file inspection, only after a local permit; no network egress |
-| Canonical runtime | `"$PY" "$DEEP_HARNESS_DIR/scripts/research_state.py" <command>` |
+| Canonical runtime | `"$PY" "$AGENT_DEEP_RESEARCH_DIR/scripts/research_state.py" <command>` |
 | State recovery | `research_state.py recover <session> --json` |
 | Final gate | `research_state.py validate <session> --json` |
 | Human report | `research_state.py render <session> --json` |

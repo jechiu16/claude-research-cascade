@@ -33,6 +33,85 @@ class DocumentationTests(unittest.TestCase):
                     (ROOT / relative).read_text(encoding="utf-8"),
                 )
 
+    def test_product_identity_is_host_neutral(self) -> None:
+        pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('name = "agent-deep-research-trigger"', pyproject)
+        for relative in ("README.md", "README.zh-TW.md", "SKILL.md"):
+            with self.subTest(path=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("Agent Deep Research Trigger", text)
+                self.assertIn("Claude Code", text)
+                self.assertIn("Codex", text)
+
+    def test_both_hosts_have_project_skill_discovery_wrappers(self) -> None:
+        wrappers = (
+            ".claude/skills/deep/SKILL.md",
+            ".agents/skills/deep/SKILL.md",
+        )
+        canonical = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        for relative in wrappers:
+            with self.subTest(path=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("../../../SKILL.md", text)
+                self.assertIn("name: deep", text)
+                self.assertIn("description:", text)
+        self.assertIn("shared by\nClaude Code and OpenAI Codex", canonical)
+
+    def test_readmes_use_official_host_skill_locations(self) -> None:
+        combined = "\n".join(
+            (ROOT / relative).read_text(encoding="utf-8")
+            for relative in ("README.md", "README.zh-TW.md")
+        )
+        self.assertIn("$HOME/.claude/skills/deep", combined)
+        self.assertIn("$HOME/.agents/skills/deep", combined)
+
+    def test_source_distribution_includes_agent_skill_files(self) -> None:
+        manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+        for required in (
+            "SKILL.md",
+            "AGENTS.md",
+            "HARNESS.md",
+            ".claude",
+            ".agents",
+        ):
+            with self.subTest(path=required):
+                self.assertIn(required, manifest)
+
+    def test_current_scenarios_use_v2_contract_vocabulary(self) -> None:
+        scenarios = (ROOT / "SCENARIOS.md").read_text(encoding="utf-8").lower()
+        self.assertIn("posture", scenarios)
+        self.assertIn("tier", scenarios)
+        for legacy in ("three-axis", "preset: fast", "preset: standard"):
+            with self.subTest(term=legacy):
+                self.assertNotIn(legacy, scenarios)
+
+    def test_readme_front_matter_is_searchable_and_focused(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        opening = "\n".join(readme.splitlines()[:20]).lower()
+        for phrase in (
+            "agent deep research trigger",
+            "deep research",
+            "agent skill",
+            "claude code",
+            "openai codex",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, opening)
+        self.assertLessEqual(len(readme.splitlines()), 260)
+
+    def test_active_identity_files_do_not_use_retired_brand(self) -> None:
+        for relative in (
+            "README.md",
+            "README.zh-TW.md",
+            "SKILL.md",
+            "AGENTS.md",
+            "HARNESS.md",
+            "pyproject.toml",
+        ):
+            with self.subTest(path=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8").lower()
+                self.assertNotIn("claude-research-cascade", text)
+
     def test_runtime_docs_name_registry_and_provider_portfolio(self) -> None:
         for relative in ("README.md", "README.zh-TW.md", "HARNESS.md"):
             with self.subTest(path=relative):

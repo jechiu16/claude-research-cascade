@@ -5,8 +5,8 @@ Semantic Versioning once the v2 runtime leaves development status.
 
 ## [Unreleased]
 
-The current package version is the `2.0.0b1` release candidate. A matching
-`v2.0.0-beta.1` tag triggers the gated GitHub prerelease workflow.
+The current package version is the `2.0.0b2` release candidate. A matching
+`v2.0.0-beta.2` tag triggers the gated GitHub prerelease workflow.
 
 ### Added
 
@@ -22,6 +22,17 @@ The current package version is the `2.0.0b1` release candidate. A matching
 - GitHub-hosted workflows use the current Node 24 action runtimes.
 - Exa enabled as an anti-lock-in and verification route after a bounded paired
   benchmark demonstrated material unique-index gain over Brave.
+- Claude Code and Codex project-skill discovery wrappers backed by one
+  host-neutral canonical `SKILL.md`.
+
+### Changed
+
+- Rebranded the project from `claude-research-cascade` to
+  `agent-deep-research-trigger` to reflect its host-neutral Claude Code,
+  OpenAI Codex, and Agent Skills scope.
+- Rewrote the English and Traditional Chinese README files around one concise
+  install path, explicit compatibility, searchable use cases, and verifiable
+  safety guarantees.
 
 ### Fixed
 

@@ -62,9 +62,9 @@ class GithubAdapterUnitTests(unittest.TestCase):
     """Pure build()/parse() tests: no network, no session machinery."""
 
     def test_build_is_a_true_get_with_no_credential_required(self) -> None:
-        spec = github.build("jechiu16/claude-research-cascade", {})
+        spec = github.build("jechiu16/agent-deep-research-trigger", {})
         self.assertEqual(spec.method, "GET")
-        self.assertEqual(spec.url, "https://api.github.com/repos/jechiu16/claude-research-cascade")
+        self.assertEqual(spec.url, "https://api.github.com/repos/jechiu16/agent-deep-research-trigger")
         self.assertEqual(spec.body, b"")
         self.assertNotIn("Authorization", spec.headers)
         self.assertEqual(spec.headers["Accept"], "application/vnd.github+json")
@@ -72,7 +72,7 @@ class GithubAdapterUnitTests(unittest.TestCase):
         self.assertEqual(spec.headers["User-Agent"], "research-harness-v2")
 
     def test_build_attaches_bearer_token_when_present(self) -> None:
-        spec = github.build("jechiu16/claude-research-cascade", {"GITHUB_TOKEN": "s3cr3t"})
+        spec = github.build("jechiu16/agent-deep-research-trigger", {"GITHUB_TOKEN": "s3cr3t"})
         self.assertEqual(spec.headers["Authorization"], "Bearer s3cr3t")
         # The credential must never leak into the URL or fingerprint surface.
         self.assertNotIn("s3cr3t", spec.url)
@@ -142,8 +142,8 @@ class GithubBoundaryTests(unittest.TestCase):
 
     def test_success_records_occurrence_with_expectations_from_fixture(self) -> None:
         # Expectations come from the fixture itself: it is a recorded real
-        # response (live github call 2026-07-11 against
-        # jechiu16/claude-research-cascade) and may be re-recorded later.
+        # GitHub response and may be re-recorded after repository metadata
+        # changes.
         fixture = json.loads((FIXTURES / "github_success.json").read_text())
         expected_full_name = fixture["full_name"]
         expected_html_url = fixture["html_url"]
@@ -160,7 +160,7 @@ class GithubBoundaryTests(unittest.TestCase):
         expected_synthesis = "\n".join(expected_lines)
 
         result = execute_probe(
-            self.session, "A1", "jechiu16/claude-research-cascade", NOW,
+            self.session, "A1", "jechiu16/agent-deep-research-trigger", NOW,
             transport=fixture_transport("github_success.json"), environ=TEST_ENV,
         )
         occurrence = result["occurrence"]
@@ -204,7 +204,7 @@ class GithubBoundaryTests(unittest.TestCase):
     def test_parse_failure_spools_raw_and_fails_attempt(self) -> None:
         with self.assertRaises(AdapterParseError):
             execute_probe(
-                self.session, "A1", "jechiu16/claude-research-cascade", NOW,
+                self.session, "A1", "jechiu16/agent-deep-research-trigger", NOW,
                 transport=fixture_transport("github_malformed_missing_full_name.json"),
                 environ=TEST_ENV,
             )
@@ -224,12 +224,12 @@ class GithubBoundaryTests(unittest.TestCase):
 
     def test_second_execution_of_same_action_is_refused(self) -> None:
         execute_probe(
-            self.session, "A1", "jechiu16/claude-research-cascade", NOW,
+            self.session, "A1", "jechiu16/agent-deep-research-trigger", NOW,
             transport=fixture_transport("github_success.json"), environ=TEST_ENV,
         )
         with self.assertRaises(BoundaryError):
             execute_probe(
-                self.session, "A1", "jechiu16/claude-research-cascade", NOW,
+                self.session, "A1", "jechiu16/agent-deep-research-trigger", NOW,
                 transport=fixture_transport("github_success.json"), environ=TEST_ENV,
             )
 
@@ -237,7 +237,7 @@ class GithubBoundaryTests(unittest.TestCase):
         # github is keyless: unlike sonar (PERPLEXITY_API_KEY required), an
         # empty environ must not block the route.
         result = execute_probe(
-            self.session, "A1", "jechiu16/claude-research-cascade", NOW,
+            self.session, "A1", "jechiu16/agent-deep-research-trigger", NOW,
             transport=fixture_transport("github_success.json"), environ={},
         )
         self.assertEqual(result["occurrence"]["provider_id"], "github")

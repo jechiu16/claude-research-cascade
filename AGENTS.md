@@ -1,13 +1,15 @@
-# /deep - Codex Binding
+# Agent Deep Research Trigger — Codex Binding
 
 Use this protocol only when the user explicitly invokes `/deep`. You are the **Organizer** of the host-neutral v2 runtime in [HARNESS.md](HARNESS.md), not a single model producing a long research answer from memory.
 
 ## Discovery
 
-Codex loads `AGENTS.md` from the project hierarchy. Set `DEEP_HARNESS_DIR` to this checkout or install the skill globally, then invoke the runtime with the project venv:
+Codex loads `AGENTS.md` from the project hierarchy. Set
+`AGENT_DEEP_RESEARCH_DIR` to this checkout or install the skill under
+`~/.agents/skills/deep`, then invoke the runtime with the project venv:
 
 ```bash
-"$PY" "$DEEP_HARNESS_DIR/scripts/research_state.py" --help
+"$PY" "$AGENT_DEEP_RESEARCH_DIR/scripts/research_state.py" --help
 ```
 
 ## Required Protocol
@@ -24,7 +26,7 @@ Codex loads `AGENTS.md` from the project hierarchy. Set `DEEP_HARNESS_DIR` to th
 
 `sonar`, `github`, `pypi`, `scholar`, `openalex`, `exa`, and async `perplexity` are enabled through the common v2 request boundary (`research_state.py execute` after a permit). Exa is reserved for anti-lock-in or verification where its independent index adds value; Brave remains the default general scout. Every other external provider and processor route stays disabled until its worker adapter passes the same gates. Existing API keys or a green credential doctor are not execution readiness. Do not call `scripts/deep_research.py` as a bypass inside a v2 session.
 
-First-run sanity check: `"$PY" "$DEEP_HARNESS_DIR/scripts/research_state.py" demo /tmp/deep-demo --json` proves the whole runtime (permit -> occurrence -> validate -> render) with zero network and zero cost.
+First-run sanity check: `"$PY" "$AGENT_DEEP_RESEARCH_DIR/scripts/research_state.py" demo /tmp/deep-demo --json` proves the whole runtime (permit -> occurrence -> validate -> render) with zero network and zero cost.
 
 ## Codex Map
 

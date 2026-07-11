@@ -14,7 +14,7 @@ This transcript calibrates a cheap `/deep` run. It shows that even a shallow ans
 
 **User:** `/deep What license does this repository use?`
 
-**Organizer:** I infer the target from context: identify the repository license for `claude-research-cascade`. No framing question needed; the answer is local and source-of-record.
+**Organizer:** I infer the target from context: identify the repository license for `agent-deep-research-trigger`. No framing question needed; the answer is local and source-of-record.
 
 Before spending, choose the three-axis research contract:
 

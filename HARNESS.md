@@ -1,4 +1,4 @@
-# /deep V2 Organizer Harness
+# Agent Deep Research Trigger — V2 Organizer Harness
 
 This is the host-neutral executable protocol. Claude Code uses [SKILL.md](SKILL.md); Codex uses [AGENTS.md](AGENTS.md). The design rationale lives under `docs/superpowers/specs/`.
 

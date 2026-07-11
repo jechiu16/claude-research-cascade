@@ -28,7 +28,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python -c 'import importlib.metadata, os; from packaging.version import Version; assert Version(os.environ["RELEASE_TAG"].removeprefix("v")) == Version(importlib.metadata.version("claude-research-cascade"))'
+          python -c 'import importlib.metadata, os; from packaging.version import Version; assert Version(os.environ["RELEASE_TAG"].removeprefix("v")) == Version(importlib.metadata.version("agent-deep-research-trigger"))'
 
       - name: Run release gate
         run: deep-research-release-gate
