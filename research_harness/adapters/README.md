@@ -43,8 +43,9 @@ either needs a written reason in your report.
 - Respect provider rate limits during the live call (Semantic Scholar: one
   request per second, never parallel).
 - `ParsedResult.kind` must be honest: `search_synthesis` (model-written
-  synthesis over search), `paper_listing` (scholarly metadata listing),
-  `record_fetch` (the payload IS the canonical record).
+  synthesis over search), `result_listing` (ranked search results, no
+  synthesis), `paper_listing` (scholarly metadata listing), `record_fetch`
+  (the payload IS the canonical record).
 - `evidence_capabilities.can_support_claims`: `false` for search/listing
   shapes (their output guides retrieval; it is not claim evidence). `true`
   only for direct source-of-record fetch shapes, and then
@@ -69,8 +70,8 @@ either needs a written reason in your report.
 - **Bodyless GET**: set `body=b""`; the transport sends `data=None` for empty
   bodies so the request stays a true GET.
 - **`retrieval_shape` taxonomy**: use coarse shapes — `cited-synthesis`,
-  `paper-listing`, `record-fetch` — not per-endpoint lists; keep it consistent
-  with `ParsedResult.kind`.
+  `result-listing`, `paper-listing`, `record-fetch` — not per-endpoint lists;
+  keep it consistent with `ParsedResult.kind`.
 - **Timeouts**: sync record/listing fetches default to `30.0`; model-written
   synthesis routes to `120.0`. State your choice in the module docstring only
   if you deviate.

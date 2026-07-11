@@ -67,7 +67,7 @@ class ParsedResult:
     cost_usd: Optional[float]
     usage: dict[str, Any]
     model: str
-    kind: str = "search_synthesis"  # e.g. search_synthesis / paper_listing / record_fetch
+    kind: str = "search_synthesis"  # search_synthesis / result_listing / paper_listing / record_fetch
 
 
 def _adapters() -> dict[str, dict[str, Any]]:
