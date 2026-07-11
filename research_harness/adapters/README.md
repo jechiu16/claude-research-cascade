@@ -4,6 +4,18 @@ One provider, one module, one exact contract. `sonar.py` is the golden
 example; `tests/test_boundary.py` is the golden test pattern. Deviating from
 either needs a written reason in your report.
 
+**Reserved id — do not build this one:** `test-only-unbound-candidate` in
+`provider_registry.json` is a permanent synthetic sentinel relied on by
+`tests/test_contracts.py` (`test_enabled_external_route_requires_bound_interceptor_and_adoption`
+and `test_enabled_external_adoption_evidence_must_be_nonempty`) to exercise
+the "not v2-bound" / "lacks adoption evidence" registry-validation error
+branches. It must stay on the default `legacy_unbound` execution_binding
+forever — never give it an adapter, fill in its registry fields, or write
+`research_harness/adapters/test-only-unbound-candidate.py`. Prior versions of
+this contract test hardcoded a real candidate id instead (sonar, then brave,
+then mojeek) and broke every time that candidate got built for real; this
+sentinel exists so that never has to happen again.
+
 ## Deliverables (definition of done)
 
 1. `research_harness/adapters/<provider>.py` with two pure functions:

@@ -202,26 +202,36 @@ class ContractTests(unittest.TestCase):
                         load_provider_registry(overlay=overlay)
 
     def test_enabled_external_route_requires_bound_interceptor_and_adoption(self) -> None:
-        # brave stays the canonical disabled candidate now that sonar is v2-bound.
+        # "test-only-unbound-candidate" is a permanent synthetic registry
+        # record (relies entirely on provider_defaults, so it always stays on
+        # execution_binding "legacy_unbound") reserved exactly for this test.
+        # Earlier versions of this test hardcoded a real candidate id
+        # (sonar, then brave, then mojeek in turn) and broke every time that
+        # candidate's adapter got built out for real. Do not point this back
+        # at a real provider id — see research_harness/adapters/README.md.
         registry = copy.deepcopy(self.registry)
-        brave = next(p for p in registry["providers"] if p["id"] == "brave")
-        brave["enabled"] = True
+        sentinel = next(p for p in registry["providers"] if p["id"] == "test-only-unbound-candidate")
+        sentinel["enabled"] = True
         errors = validate_provider_registry(registry)
-        self.assertIn("enabled external route brave is not v2-bound", errors)
-        brave["execution_binding"] = "v2_request_boundary"
+        self.assertIn("enabled external route test-only-unbound-candidate is not v2-bound", errors)
+        sentinel["execution_binding"] = "v2_request_boundary"
         errors = validate_provider_registry(registry)
-        self.assertIn("enabled external route brave lacks adoption evidence", errors)
+        self.assertIn("enabled external route test-only-unbound-candidate lacks adoption evidence", errors)
 
     def test_enabled_external_adoption_evidence_must_be_nonempty(self) -> None:
+        # Same permanent sentinel as above — moved for consistency. This test
+        # overrides every field it touches, so it never actually depended on
+        # brave specifically; pinning it to a real candidate id was still a
+        # latent trap for the next adapter builder.
         registry = copy.deepcopy(self.registry)
-        brave = next(p for p in registry["providers"] if p["id"] == "brave")
-        brave["enabled"] = True
-        brave["execution_binding"] = "v2_request_boundary"
-        brave["adoption_status"] = "validated"
-        brave["adoption_evidence"] = []
-        brave["storage_rights"]["payload_retention"] = "session"
+        sentinel = next(p for p in registry["providers"] if p["id"] == "test-only-unbound-candidate")
+        sentinel["enabled"] = True
+        sentinel["execution_binding"] = "v2_request_boundary"
+        sentinel["adoption_status"] = "validated"
+        sentinel["adoption_evidence"] = []
+        sentinel["storage_rights"]["payload_retention"] = "session"
         errors = validate_provider_registry(registry)
-        self.assertIn("enabled external route brave lacks adoption evidence", errors)
+        self.assertIn("enabled external route test-only-unbound-candidate lacks adoption evidence", errors)
 
     def test_enabled_sonar_route_is_v2_bound_with_adoption_evidence(self) -> None:
         sonar = next(p for p in self.registry["providers"] if p["id"] == "sonar")

@@ -694,6 +694,9 @@
       "retrieval_shape": ["standards-metadata"],
       "required_env": [],
       "docs_url": "https://datatracker.ietf.org/api/"
+    },
+    {
+      "id": "test-only-unbound-candidate"
     }
   ]
 }
