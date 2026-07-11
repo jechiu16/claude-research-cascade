@@ -20,6 +20,18 @@ any invariant the sync path enforces.
 
 ## Lifecycle
 
+Both the `deep` and `transport` categories below share a single contract
+stage, `investigation` — not separate `deep_investigation` / `deep_transport`
+stages. This matches §7.1 of
+docs/superpowers/specs/2026-07-10-adaptive-scientific-research-harness-design.md
+("investigation | ... | each accepted submission=`deep`", with `transport`
+defined there as "one poll, resume, stream reconnect, or artifact-download
+request that harvests an already authorized job without initiating or
+expanding research") and the pre-existing openai/gemini candidate registry
+records, which already carry `stage_capabilities: ["investigation",
+"anti_lock_in"]` and `request_multiplicity: {"deep": 1, "transport": 1}`. The
+perplexity route follows the same convention.
+
 ```
 acquire(deep)      permit_acquired            (deep permit consumed)
 submit             attempted -> accepted      details: {job: "provider:id"}
@@ -29,7 +41,8 @@ terminal:
                    optional ingest_provider_artifact under storage rights
   failed           provider-terminal state; permit stays consumed
   uncertain        wall-time exhausted or poll transport died;
-                   job token remains harvestable via resume
+                   job token remains harvestable via a later deep-poll
+                   (which auto-resumes it — see Resume below)
 ```
 
 Poll accounting is honest: every poll GET is a physical transport request.
@@ -42,7 +55,11 @@ contract templates for deep tiers budget `transport` ceilings accordingly
 Sync adapters export `build/parse`. Async adapters export:
 
 - `submit(query, env) -> RequestSpec` — the paid POST; never retried.
-- `job_token(payload) -> str` — extract "provider:id" from the accept body.
+- `job_token(payload) -> str` — extract the BARE provider-native job id from
+  the accept body (no prefix). The boundary composes `"provider:id"` itself
+  at the journaling site, in `execute_deep_submit`, when it writes the
+  `accepted` attempt-status details — adapters never see or produce the
+  prefixed form.
 - `poll(token, env) -> RequestSpec` — one status GET.
 - `extract(payload) -> ParsedResult | None` — None means still running;
   raises AdapterParseError on terminal-but-malformed (payload already
@@ -54,12 +71,26 @@ mismatches.
 
 ## Resume
 
+There is no separate `deep-resume` verb. Resume is folded into `deep-poll`:
+calling `deep-poll` against an `uncertain` deep action first auto-journals
+the `uncertain -> accepted` transition (details `{"resume": true}`), then
+performs the one physical poll under the freshly acquired `transport`
+permit — same command, same attempt chain as any other poll.
+`uncertain -> accepted` is the only transition out of `uncertain` in
+`quota.ATTEMPT_TRANSITIONS`.
+
 - `research_state.py deep-pending <session>`: scan the event journal for
-  accepted-without-terminal deep actions; print job tokens. Free.
-- `research_state.py deep-resume <session> --action-id A` — continue polling
-  under NEW transport permits (acquired normally), same attempt chain
-  (`uncertain -> accepted` is added to the attempt transition table for
-  resumed jobs; the transition is journaled with the resume reason).
+  accepted-without-terminal (`accepted` or `uncertain`) deep actions; print
+  job tokens. Free, no network.
+- `research_state.py deep-poll <session> --action-id D --poll-action-id T`:
+  the only way to advance an `uncertain` action — see above. `--action-id`
+  is the deep action being polled; `--poll-action-id` is a freshly acquired
+  `transport` permit action.
+- `research_state.py deep-timeout <session> --action-id D`: free, no-network
+  wall-clock check that moves a stuck `accepted` action to `uncertain` once
+  `external.max_wall_time_seconds` has elapsed since the ORIGINAL
+  submission. Stays its own operation, separate from `deep-poll`
+  (idempotent, side-effect-free no-op when there's nothing to do).
 
 ## Deliberately out of scope
 
