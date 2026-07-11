@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest import mock
 
@@ -14,6 +15,7 @@ from research_harness.storage import (
     RevisionConflict,
     SessionLockTimeout,
     StateValidationError,
+    StorageError,
     _append_event_unlocked,
     _apply_artifact_state_patch_unlocked,
     apply_state_patch,
@@ -241,6 +243,61 @@ class StorageTests(unittest.TestCase):
             handle.write(json.dumps({"event": "forged", "seq": 2}) + "\n")
         with self.assertRaises(RecoveryError):
             recover_session(self.session)
+
+    def test_undecodable_transaction_json_raises_typed_recovery_error(self) -> None:
+        # _read_json's path.read_text(encoding="utf-8") raises
+        # UnicodeDecodeError on non-UTF-8 bytes, which the old
+        # `except (OSError, json.JSONDecodeError)` did not catch --
+        # regression for that untyped-exception escape.
+        (self.session / "transaction.json").write_bytes(b"\xff\xfe")
+        with self.assertRaises(RecoveryError):
+            recover_session(self.session)
+
+    def test_undecodable_state_json_raises_typed_storage_error(self) -> None:
+        # Same untyped-exception escape as above, in _load_state_unlocked
+        # (path.read_text(encoding="utf-8") -> UnicodeDecodeError).
+        (self.session / "state.json").write_bytes(b"\xff\xfe")
+        with self.assertRaises(StorageError):
+            load_state(self.session)
+
+    def test_recovery_rejects_missing_state_json_instead_of_reporting_clean(self) -> None:
+        # No transaction.json, no event.transaction.json, no state.next.json
+        # pending -- but state.json itself is gone. Nothing in this WAL
+        # protocol ever points a transaction at state.json's absence, so the
+        # old code fell straight through to a false {"resolution": "clean"}.
+        (self.session / "state.json").unlink()
+        with self.assertRaises(RecoveryError):
+            recover_session(self.session)
+
+    def test_recovery_rejects_undecodable_state_json_instead_of_reporting_clean(self) -> None:
+        (self.session / "state.json").write_bytes(b"\xff\xfe")
+        with self.assertRaises(RecoveryError):
+            recover_session(self.session)
+
+    def test_recovery_sweeps_orphaned_atomic_write_tmp_files(self) -> None:
+        # Simulates a hard crash inside _atomic_write_bytes_unlocked: the temp
+        # file (f".{name}.{uuid4().hex}.tmp") was created but the process died
+        # before the `except BaseException: temp.unlink(...)` cleanup could
+        # run, so it is orphaned on disk forever unless recovery sweeps it.
+        orphan1 = self.session / f".state.json.{uuid.uuid4().hex}.tmp"
+        orphan2 = self.session / f".transaction.json.{uuid.uuid4().hex}.tmp"
+        orphan1.write_bytes(b"partial")
+        orphan2.write_bytes(b"partial")
+        # Not the atomic-writer's exact pattern (no 32-char hex uuid segment)
+        # -- must survive the sweep untouched.
+        not_a_match = self.session / ".unrelated.tmp"
+        not_a_match.write_text("keep me", encoding="utf-8")
+
+        recovered = recover_session(self.session)
+
+        self.assertEqual(recovered, {"resolution": "clean", "swept_tmp": 2})
+        self.assertFalse(orphan1.exists())
+        self.assertFalse(orphan2.exists())
+        self.assertTrue(not_a_match.exists())
+
+    def test_recovery_reports_zero_swept_tmp_when_nothing_orphaned(self) -> None:
+        recovered = recover_session(self.session)
+        self.assertEqual(recovered, {"resolution": "clean", "swept_tmp": 0})
 
 
 if __name__ == "__main__":

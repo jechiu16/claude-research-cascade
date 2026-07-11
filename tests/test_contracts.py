@@ -43,6 +43,18 @@ class ContractTests(unittest.TestCase):
         errors = validate_contract(self.contract, {})
         self.assertIn("provider registry schema_version must be 1.0", errors)
 
+    def test_undecodable_registry_file_raises_typed_provider_registry_error(self) -> None:
+        # _load_json's path.read_text(encoding="utf-8") raises
+        # UnicodeDecodeError on non-UTF-8 bytes, which the old
+        # `except (OSError, json.JSONDecodeError)` did not catch --
+        # regression for that untyped-exception escape (mirrors storage.py's
+        # _read_json / _load_state_unlocked fix).
+        with tempfile.TemporaryDirectory() as tempdir:
+            bad_path = Path(tempdir) / "registry.json"
+            bad_path.write_bytes(b"\xff\xfe")
+            with self.assertRaises(ProviderRegistryError):
+                load_provider_registry(path=bad_path)
+
     def test_confirmation_binds_card_and_resolved_registry_hashes(self) -> None:
         contract = copy.deepcopy(self.contract)
         contract["resource_envelope"]["physical_ceiling"]["host_retrieval"] += 1

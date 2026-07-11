@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import socket
 import time
 import uuid
@@ -23,6 +24,15 @@ STATE_NEXT_FILE = "state.next.json"
 STATE_TRANSACTION_FILE = "transaction.json"
 EVENT_TRANSACTION_FILE = "event.transaction.json"
 LOCK_FILE = ".session.lock"
+
+# _atomic_write_bytes_unlocked names its scratch file
+# f".{path.name}.{uuid.uuid4().hex}.tmp" next to the real target. Its
+# `except BaseException: temp.unlink(missing_ok=True)` cleanup never runs on
+# a hard kill (SIGKILL, power loss), which orphans that file forever. This
+# pattern is what the clean-path recovery sweep matches -- deliberately
+# strict (a 32-char lowercase hex uuid segment) so it never touches an
+# unrelated dotfile a caller might have dropped in the session directory.
+_ORPHAN_TMP_PATTERN = re.compile(r"^\..+\.[0-9a-f]{32}\.tmp$")
 
 ORGANIZER_ROOTS = frozenset(
     {
@@ -114,7 +124,7 @@ def _atomic_write_json_unlocked(path: Path, value: Any) -> None:
 def _read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RecoveryError(f"cannot read {path.name}: {exc}") from exc
 
 
@@ -209,7 +219,7 @@ def _load_state_unlocked(session_dir: Path) -> dict[str, Any]:
     path = Path(session_dir) / STATE_FILE
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise StorageError(f"cannot load state.json: {exc}") from exc
     if not isinstance(value, dict):
         raise StorageError("state.json must contain an object")
@@ -301,6 +311,22 @@ def _append_bytes_unlocked(path: Path, payload: bytes) -> None:
 def _remove_unlocked(path: Path) -> None:
     path.unlink(missing_ok=True)
     _fsync_dir(path.parent)
+
+
+def _sweep_orphaned_tmp_unlocked(session_dir: Path) -> int:
+    """Unlink hard-crash-orphaned atomic-writer scratch files.
+
+    Only direct children of session_dir are considered (never recurses into
+    raw/, which has its own unrelated .{artifact_id}.tmp convention for
+    artifact payload staging) and only names matching the atomic writer's
+    exact pattern are removed.
+    """
+    swept = 0
+    for entry in session_dir.iterdir():
+        if entry.is_file() and not entry.is_symlink() and _ORPHAN_TMP_PATTERN.match(entry.name):
+            _remove_unlocked(entry)
+            swept += 1
+    return swept
 
 
 def _append_prepared_event_unlocked(session_dir: Path, line: bytes) -> None:
@@ -431,7 +457,17 @@ def _recover_session_unlocked(session_dir: Path) -> dict[str, Any]:
     if staged.exists():
         _remove_unlocked(staged)
         return {"resolution": "discarded_uncommitted_state"}
-    return {"resolution": "clean"}
+    # No pending transaction and nothing staged is only "clean" if state.json
+    # itself is actually there and readable -- a missing or undecodable
+    # state.json is not something this WAL protocol tracks at all (no
+    # transaction.json ever pointed at it), so it would otherwise fall
+    # straight through to a false "clean" verdict.
+    try:
+        _load_state_unlocked(session_dir)
+    except StorageError as exc:
+        raise RecoveryError(f"state.json is missing or unreadable: {exc}") from exc
+    swept_tmp = _sweep_orphaned_tmp_unlocked(session_dir)
+    return {"resolution": "clean", "swept_tmp": swept_tmp}
 
 
 def recover_session(session_dir: Path) -> dict[str, Any]:

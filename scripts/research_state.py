@@ -45,6 +45,36 @@ from research_harness.storage import apply_state_patch, create_session, load_sta
 from research_harness.validation import validate_session
 
 
+# Set by main() from the exact argv it is about to parse (not sys.argv --
+# main() also accepts an explicit argv list for in-process callers), right
+# before parse_args() and reset in a finally. argparse failures (missing
+# required arg, bad --count int) call ArgumentParser.error() and exit(2)
+# from inside build_parser().parse_args(argv), before main()'s try/except
+# ever runs -- this is the only hook point with both the real error message
+# and, for --json callers, a reason to also put a JSON envelope on stdout
+# instead of leaving it empty. A class attribute (rather than per-instance)
+# is required because subparsers are separate _JSONArgumentParser instances
+# created inside build_parser(), before any argv is known.
+_JSONArgumentParser_json_mode = False
+
+
+class _JSONArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        if _JSONArgumentParser_json_mode:
+            self.print_usage(sys.stderr)
+            print(f"{self.prog}: error: {message}", file=sys.stderr)
+            print(
+                json.dumps(
+                    {"error": message, "command": self.prog.split()[-1] if self.prog else None},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+            self.exit(2)
+        super().error(message)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -489,7 +519,7 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Canonical v2 research session runtime")
+    parser = _JSONArgumentParser(description="Canonical v2 research session runtime")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     providers = subparsers.add_parser("providers", help="list secret-free provider capabilities")
@@ -661,12 +691,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global _JSONArgumentParser_json_mode
     _load_dotenv_if_available()
-    args = build_parser().parse_args(argv)
+    effective_argv = sys.argv[1:] if argv is None else list(argv)
+    _JSONArgumentParser_json_mode = "--json" in effective_argv
+    try:
+        args = build_parser().parse_args(argv)
+    finally:
+        _JSONArgumentParser_json_mode = False
     try:
         payload, code = args.handler(args)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
+        if args.json:
+            print(
+                json.dumps(
+                    {"error": str(exc), "command": args.command},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
         return 1
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))

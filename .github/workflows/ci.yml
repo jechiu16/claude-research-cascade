@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Stdlib-only: no requirements.txt install step. requests/python-dotenv
+      # are optional runtime conveniences (lazy/try-except imports), never
+      # imported by tests/, scripts/research_state.py, or
+      # scripts/validate_transcripts.py.
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -q
+
+      - name: Validate golden transcripts
+        run: python scripts/validate_transcripts.py
+
+      - name: Run no-network demo end-to-end
+        run: python scripts/research_state.py demo "$RUNNER_TEMP/deep-demo" --json

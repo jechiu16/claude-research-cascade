@@ -245,6 +245,68 @@ class CliTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("contract is not user-confirmed", result.stderr)
 
+    def test_json_runtime_error_envelope_lands_on_stdout(self) -> None:
+        # main()'s except-Exception path used to print only to stderr and
+        # leave stdout EMPTY even with --json -- a --json caller had no
+        # single-stream contract to parse on failure. Now stdout also carries
+        # a {"error", "command"} envelope, on top of the unchanged stderr line.
+        result = self.run_cli(
+            "init",
+            str(self.session),
+            "--question",
+            "Q",
+            "--contract",
+            str(self.draft),
+            "--json",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["command"], "init")
+        self.assertIn("contract is not user-confirmed", payload["error"])
+        self.assertIn("contract is not user-confirmed", result.stderr)
+
+    def test_json_argparse_error_envelope_lands_on_stdout(self) -> None:
+        # argparse failures (missing required arg, bad --count type) raise
+        # SystemExit(2) from inside build_parser().parse_args(), before
+        # main()'s try/except ever runs -- previously always stderr-only and
+        # stdout-empty regardless of --json.
+        result = self.run_cli(
+            "permit",
+            str(self.session),
+            "--action-id",
+            "A1",
+            "--stage",
+            "primary_scout",
+            "--category",
+            "host_retrieval",
+            "--route",
+            "host-web",
+            "--count",
+            "not-an-int",
+            "--fingerprint",
+            "sha256:test",
+            "--json",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["command"], "permit")
+        self.assertIn("--count", payload["error"])
+        self.assertIn("invalid int value", result.stderr)
+
+    def test_argparse_error_without_json_flag_leaves_stdout_empty(self) -> None:
+        # Non-json behavior must stay exactly as before: stderr-only usage
+        # and error text, empty stdout, exit 2.
+        result = self.run_cli(
+            "patch",
+            str(self.session),
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("--patch", result.stderr)
+
     def test_cli_lists_capabilities_without_secret_values(self) -> None:
         secret = "test-secret-must-not-appear"
         env = os.environ.copy()
