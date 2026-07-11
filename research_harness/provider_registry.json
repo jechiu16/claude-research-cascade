@@ -489,7 +489,12 @@
     },
     {
       "id": "pypi",
-      "adapter": "candidate-pypi",
+      "adapter": "pypi-package-record",
+      "adapter_version": "v1",
+      "enabled": false,
+      "execution_binding": "v2_request_boundary",
+      "adoption_status": "not_tested",
+      "adoption_evidence": [],
       "roles": ["source-of-record"],
       "action_categories": ["probe"],
       "stage_capabilities": ["primary_scout", "verification"],
@@ -497,9 +502,22 @@
       "index_family": "pypi",
       "index_provenance": "registry",
       "upstream_provider": "pypi",
-      "retrieval_shape": ["package-metadata", "release-metadata"],
+      "retrieval_shape": ["record-fetch"],
+      "evidence_capabilities": {"can_support_claims": true, "requires_direct_fetch": true},
+      "controls": {"domain_filter": "not_applicable", "date_filter": "not_applicable", "max_results": "not_applicable"},
+      "metering": {"unit": "request", "list_price": "free (public read-only JSON API; no published rate limit)", "verified_at": "2026-07-11"},
+      "transport": {"mode": "sync", "polling": "not_applicable"},
+      "privacy": {"local_file_egress": false, "zdr": "not_applicable"},
+      "storage_rights": {
+        "payload_retention": "session",
+        "html_allowed": false,
+        "allowed_operational_fields": ["query_hash", "request_count"],
+        "verified_at": "2026-07-11",
+        "source": "https://docs.pypi.org/api/ (public package metadata)"
+      },
       "required_env": [],
-      "docs_url": "https://docs.pypi.org/api/json/"
+      "docs_url": "https://docs.pypi.org/api/json/",
+      "docs_verified_at": "2026-07-11"
     },
     {
       "id": "osv",

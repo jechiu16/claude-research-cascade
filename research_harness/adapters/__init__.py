@@ -12,10 +12,11 @@ never appear in fixtures, occurrences, or fingerprints.
 
 from __future__ import annotations
 
-from . import github, scholar, sonar
+from . import github, pypi, scholar, sonar
 
 ADAPTERS = {
     "perplexity-chat-completions@v1": {"build": sonar.build, "parse": sonar.parse},
     "github-repos-record@v1": {"build": github.build, "parse": github.parse},
     "semantic-scholar-graph-search@v1": {"build": scholar.build, "parse": scholar.parse},
+    "pypi-package-record@v1": {"build": pypi.build, "parse": pypi.parse},
 }

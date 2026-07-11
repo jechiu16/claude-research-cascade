@@ -1,0 +1,1 @@
+{"info": {"version": "1.0.0", "summary": "synthetic record with info.name stripped to exercise the parse-failure path", "license": "MIT", "requires_python": ">=3.8", "package_url": "https://pypi.org/project/synthetic-test-package/"}, "releases": {"1.0.0": []}}
