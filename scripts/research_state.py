@@ -217,6 +217,81 @@ def command_permit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     return {"permits": permits, "usage": permit_usage(Path(args.session))}, 0
 
 
+def _demo_contract(registry: dict[str, Any]) -> dict[str, Any]:
+    """Confirmed zero-network demo contract: one demo-probe, one organizer pass.
+
+    Running `demo` IS the confirmation — the route is no-network, no-key,
+    no-cost by registry construction, so the trigger the card protects
+    (external spend) cannot fire.
+    """
+
+    contract = {
+        "posture": "lookup",
+        "tier": "custom",
+        "scout_route": "demo-probe",
+        "resource_envelope": {
+            "physical_ceiling": {
+                "probe": 1, "deep": 0, "processor": 0, "network_experiment": 0,
+                "transport": 0, "host_retrieval": 0, "local": 0, "organizer_pass": 1,
+            },
+            "external": {
+                "metered_ceiling": {
+                    "probe": 0, "deep": 0, "processor": 0,
+                    "network_experiment": 0, "transport": 0,
+                },
+                "max_wall_time_seconds": 60,
+                "allowed_endpoint_classes": [],
+                "local_file_egress": False,
+                "network_experiment_endpoints": [],
+                "estimated_spend_usd": {"minimum": 0.0, "maximum": 0.0, "hard_cap": True},
+                "raw_storage_bytes": 1024 * 1024,
+            },
+            "host": {"context_class": "lean", "admitted_characters": 4000, "estimated_tokens": 1000},
+            "local": {"admitted_output_characters": 0, "max_wall_time_seconds": 60, "network_egress": False},
+        },
+        "stage_permit_map": [
+            {"stage": "primary_scout", "category": "probe", "route": "demo-probe",
+             "invocations": 1, "count": 1, "reserved": False},
+            {"stage": "final_inference_review", "category": "organizer_pass", "route": "host",
+             "invocations": 1, "count": 1, "reserved": True},
+        ],
+        "evidence_floor": {"minimum_load_bearing_claims": 1, "require_raw_artifacts": True},
+        "artifact_policy": {"default_retention": "session", "allow_provider_payloads": False},
+    }
+    contract = normalize_contract(contract)
+    contract["confirmation"] = {
+        "confirmed_by": "user",
+        "confirmed_at": _now(),
+        **_binding(contract, registry),
+    }
+    return contract
+
+
+def command_demo(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    from research_harness.quota import acquire_permits as _acquire
+    from research_harness.state import new_state as _new_state
+    from research_harness.storage import create_session as _create
+
+    registry = _registry(None)
+    contract = _demo_contract(registry)
+    question = args.question or "demo: prove the permit->attempt->occurrence->validate->render loop"
+    now = args.now or _now()
+    session = Path(args.session)
+    state = _new_state(question, contract, now, registry, os.environ)
+    _create(session, state)
+    _acquire(session, "demo-1", "primary_scout", "probe", "demo-probe", 1, "demo", now)
+    executed = execute_probe(session, "demo-1", question, now)
+    rendered = render_session_result(session)
+    return {
+        "session_id": state["session"]["id"],
+        "occurrence": executed["occurrence"]["id"],
+        "report_path": str(rendered.path.resolve()),
+        "validation_ok": rendered.validation.ok,
+        "next": "open the report, then read SKILL.md for the real flow "
+                "(prepare -> confirm -> init -> permit -> execute -> validate -> render)",
+    }, 0 if rendered.validation.ok else 1
+
+
 def command_execute(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     result = execute_probe(
         Path(args.session),
@@ -385,6 +460,15 @@ def build_parser() -> argparse.ArgumentParser:
     permit.add_argument("--now")
     _add_json_flag(permit)
     permit.set_defaults(handler=command_permit)
+
+    demo = subparsers.add_parser(
+        "demo", help="one-command no-network end-to-end session (permit -> occurrence -> report.html)"
+    )
+    demo.add_argument("session", help="directory to create for the demo session")
+    demo.add_argument("--question")
+    demo.add_argument("--now")
+    _add_json_flag(demo)
+    demo.set_defaults(handler=command_demo)
 
     execute = subparsers.add_parser(
         "execute", help="run one permitted probe through the v2 request boundary"

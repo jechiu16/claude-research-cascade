@@ -133,7 +133,8 @@ def _bound_route(state: dict[str, Any], route: str) -> dict[str, Any]:
     )
     if provider is None or provider.get("enabled") is not True:
         raise BoundaryError(f"route {route} is not enabled in the capability snapshot")
-    if provider.get("execution_binding") != "v2_request_boundary":
+    binding = provider.get("execution_binding")
+    if binding not in {"v2_request_boundary", "no_network_demo"}:
         raise BoundaryError(f"route {route} is not bound to the v2 request boundary")
     preflight = next(
         (item for item in state["capabilities"]["preflight"] if item.get("provider_id") == route),
@@ -141,10 +142,36 @@ def _bound_route(state: dict[str, Any], route: str) -> dict[str, Any]:
     )
     if preflight is None or preflight.get("ready") is not True:
         raise BoundaryError(f"route {route} preflight is not ready")
+    if binding == "no_network_demo":
+        return {**provider, "_adapter_key": None}
     adapter_key = f"{provider.get('adapter')}@{provider.get('adapter_version')}"
     if adapter_key not in _adapters():
         raise BoundaryError(f"no bound adapter for {adapter_key}")
     return {**provider, "_adapter_key": adapter_key}
+
+
+def _demo_result(query: str) -> ParsedResult:
+    """Deterministic no-network result: exercises the full lifecycle honestly.
+
+    Demo occurrences are real occurrences (permits, journal, spool, state
+    patch), but the registry bars demo routes from ever supporting claims —
+    this is the harness demonstrating itself, not producing evidence.
+    """
+
+    text = (
+        "Demo probe result (no network, no cost).\n"
+        f"query: {query}\n"
+        "This deterministic payload proves the permit -> attempt -> spool -> "
+        "occurrence -> validate -> render loop end to end."
+    )
+    return ParsedResult(
+        synthesis_text=text,
+        citations=[],
+        cost_usd=0.0,
+        usage={"demo": True},
+        model="demo-local",
+        kind="demo_probe",
+    )
 
 
 def execute_probe(
@@ -178,6 +205,25 @@ def execute_probe(
         if permit.get("category") != "probe":
             raise BoundaryError("execute_probe only handles probe permits")
         provider = _bound_route(state, permit.get("route"))
+
+        if provider["_adapter_key"] is None:  # no_network_demo route
+            _record_attempt_status_unlocked(
+                session_dir, action_id, "attempted", now, {"demo": True}
+            )
+            parsed = _demo_result(query.strip())
+            payload = json.dumps(
+                {"demo": True, "query": query.strip(), "model": parsed.model},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            spool_path = _spool_raw(session_dir, action_id, payload)
+            _record_attempt_status_unlocked(
+                session_dir, action_id, "accepted", now, {"demo": True, "spool": spool_path.name}
+            )
+            return _record_occurrence(
+                session_dir, state, provider, action_id, query.strip(),
+                sha256_hex({"demo": query.strip()}), parsed, spool_path, now,
+            )
+
         adapter = _adapters()[provider["_adapter_key"]]
 
         spec = adapter["build"](query.strip(), env)
@@ -226,35 +272,54 @@ def execute_probe(
             )
             raise
 
-        occurrence = {
-            "id": f"occ-{action_id}",
-            "provider_id": provider["id"],
-            "action_id": action_id,
-            "kind": parsed.kind,
-            "query_hash": sha256_hex(query.strip()),
-            "fingerprint": fingerprint,
-            "at": now,
-            "model": parsed.model,
-            "cost_usd": parsed.cost_usd,
-            "citation_count": len(parsed.citations),
-            "citations": parsed.citations[:CITATION_LIMIT],
-            "synthesis_excerpt": parsed.synthesis_text[:SYNTHESIS_EXCERPT_LIMIT],
-            "synthesis_truncated": len(parsed.synthesis_text) > SYNTHESIS_EXCERPT_LIMIT,
-            "spool": spool_path.name,
-        }
-        updated = _apply_boundary_patch_unlocked(
-            session_dir,
-            [{"op": "add", "path": "/retrieval_occurrences/-", "value": occurrence}],
-            state["session"]["revision"],
-            now,
+        return _record_occurrence(
+            session_dir, state, provider, action_id, query.strip(),
+            fingerprint, parsed, spool_path, now,
         )
-        _record_attempt_status_unlocked(
-            session_dir, action_id, "completed", now,
-            {"occurrence_id": occurrence["id"], "cost_usd": parsed.cost_usd,
-             "citation_count": len(parsed.citations)},
-        )
-        return {
-            "occurrence": occurrence,
-            "revision": updated["session"]["revision"],
-            "spool_path": str(spool_path),
-        }
+
+
+def _record_occurrence(
+    session_dir: Path,
+    state: dict[str, Any],
+    provider: dict[str, Any],
+    action_id: str,
+    query: str,
+    fingerprint: str,
+    parsed: ParsedResult,
+    spool_path: Path,
+    now: str,
+) -> dict[str, Any]:
+    """Write the occurrence patch and complete the attempt. Caller holds the lock."""
+
+    occurrence = {
+        "id": f"occ-{action_id}",
+        "provider_id": provider["id"],
+        "action_id": action_id,
+        "kind": parsed.kind,
+        "query_hash": sha256_hex(query),
+        "fingerprint": fingerprint,
+        "at": now,
+        "model": parsed.model,
+        "cost_usd": parsed.cost_usd,
+        "citation_count": len(parsed.citations),
+        "citations": parsed.citations[:CITATION_LIMIT],
+        "synthesis_excerpt": parsed.synthesis_text[:SYNTHESIS_EXCERPT_LIMIT],
+        "synthesis_truncated": len(parsed.synthesis_text) > SYNTHESIS_EXCERPT_LIMIT,
+        "spool": spool_path.name,
+    }
+    updated = _apply_boundary_patch_unlocked(
+        session_dir,
+        [{"op": "add", "path": "/retrieval_occurrences/-", "value": occurrence}],
+        state["session"]["revision"],
+        now,
+    )
+    _record_attempt_status_unlocked(
+        session_dir, action_id, "completed", now,
+        {"occurrence_id": occurrence["id"], "cost_usd": parsed.cost_usd,
+         "citation_count": len(parsed.citations)},
+    )
+    return {
+        "occurrence": occurrence,
+        "revision": updated["session"]["revision"],
+        "spool_path": str(spool_path),
+    }
