@@ -100,6 +100,14 @@ def acquire_permits(
     fingerprint: str,
     now: str,
 ) -> list[dict[str, Any]]:
+    """Reserve `count` physical requests for one action, or raise.
+
+    Unlike `new_state`/`execute_probe`, the confirmed-and-bound preflight
+    here (`_assert_confirmed_and_bound`) reads the live `os.environ`
+    directly and takes no `environ` override — standalone scripts and tests
+    that need a different environment must set `os.environ` itself.
+    """
+
     session_dir = Path(session_dir)
     with session_lock(session_dir):
         _recover_session_unlocked(session_dir)

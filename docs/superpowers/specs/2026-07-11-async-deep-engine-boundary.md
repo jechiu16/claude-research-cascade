@@ -1,5 +1,7 @@
 # Async Deep-Engine Boundary (DRAFT — implement after adapter wave 2 lands)
 
+Status: locked v1 2026-07-11
+
 Deep research engines (perplexity sonar-deep-research, openai deep-research,
 gemini deep research) are asynchronous: submit, poll for minutes, harvest.
 This spec extends the v2 request boundary to async routes without weakening

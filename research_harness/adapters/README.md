@@ -64,8 +64,8 @@ sentinel exists so that never has to happen again.
   `requires_direct_fetch: true` stays.
 - Do not touch other adapters, the boundary core, storage, quota, or docs.
 - Report any friction with the adapter protocol instead of working around
-  it — the schema is in DRAFT and your friction report is the input that
-  locks it.
+  it — the schema is LOCKED v1 (2026-07-11); friction reports are still
+  welcome, but a fix now means a versioned migration, not a silent edit.
 
 ## Known constraints and traps (from prior adapter builds)
 
@@ -87,3 +87,25 @@ sentinel exists so that never has to happen again.
 - **Timeouts**: sync record/listing fetches default to `30.0`; model-written
   synthesis routes to `120.0`. State your choice in the module docstring only
   if you deviate.
+- **`ParsedResult.model` naming convention**: `"<provider-endpoint>/<version>"`
+  (e.g. `brave-web-search/v1`, `openalex/works-search`, `nvd-cve/v2.0`) — the
+  second segment is a version when the provider has one, otherwise an
+  endpoint/shape qualifier. Keep both segments stable once shipped; it is
+  read back out of committed occurrences.
+- **Drop citations that lack a resolvable url — do not keep `url: None`.**
+  This is the rule `europe_pmc.py`/`openalex.py`/`exa.py`/`brave.py` apply for
+  listing-shaped results (only append when the item resolves to a real
+  `http(s)` url). `crossref.py` and `scholar.py` predate this convention and
+  still emit `url: None` entries, each pinned by an explicit test — match the
+  drop pattern for new adapters, do not copy those two.
+- **Registry required fields are exactly `providers.REQUIRED_PROVIDER_FIELDS`**
+  in `research_harness/providers.py` — that tuple is the source of truth for
+  what `validate_provider_registry` demands. Build briefs may hand you an
+  abbreviated field list; treat the constant, not the brief, as authoritative.
+- **`acquire_permits` reads live `os.environ`, not an injectable dict.** The
+  confirmed-and-bound preflight it runs (`quota._assert_confirmed_and_bound`)
+  calls `preflight_contract_routes(..., os.environ)` directly, unlike
+  `new_state`/`execute_probe`, which both accept an `environ` override.
+  Standalone scripts or tests exercising `acquire_permits` must set
+  `os.environ` itself (`monkeypatch.setenv`, etc.) — passing a custom dict
+  has no effect on this path.

@@ -1,8 +1,11 @@
 """v2 request boundary: turn one acquired permit into one physical request.
 
-DRAFT schema notice: the occurrence shape and adapter protocol below serve in
-draft status until two or three adapters and at least one real session have
-exercised them. Do not treat field lists here as locked.
+Schema status: LOCKED v1 (2026-07-11). The occurrence shape and the adapter
+protocol (sync build/parse; async submit/job_token/poll/extract) below are
+stable — they have been exercised by three request shapes (sync GET, sync
+POST, async submit/poll) across 12 live routes with fail-closed validators
+and typed failure modes. Breaking changes require a version bump and a
+migration note, not a silent field-list edit.
 
 Design rules (from the v2 decisions ledger):
 
