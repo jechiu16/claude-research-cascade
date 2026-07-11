@@ -16,7 +16,7 @@ The current foundation enables host-native, local, and deterministic no-network 
 1. Infer the question and select an epistemic `posture`: `lookup`, `synthesis`, `scientific`, or `decision`.
 2. Recommend a `tier`: `low`, `medium`, `high`, or an exact custom envelope. Show the user the selected provider route, logical invocations, physical request counts, reserved reinforcement calls, host-context class, and estimated spend uncertainty.
 3. Run `scripts/research_state.py prepare`. Show its contract card and binding hashes. Do not run `confirm`, `init`, or any research action until the user explicitly pulls the trigger.
-4. After confirmation, run `confirm` with the exact displayed card hash, then `init` with the confirmed contract. One primary scout route is allowed.
+4. After confirmation, run `confirm` with all three exact displayed hashes (card, registry, referenced route records), then `init` with the confirmed contract. One primary scout route is allowed.
 5. Before every action, acquire its exact `(stage, category, route)` permit. Record uncertain attempts as consumed; never invent a refund.
 6. Maintain canonical `state.json` through revision-checked `patch` operations. Ingest only provenance-bound raw artifacts through `artifact-add`; never create a second full Markdown report.
 7. Medium/High scientific or decision work performs anti-lock-in and coverage-audit checks. High `PASS` additionally requires a context-separated verifier that did not produce the candidate conclusion.

@@ -106,7 +106,7 @@ Status vocabulary: `implemented` means code, deterministic tests, and runtime-fa
 | Cost tiers | deferred | Exact stage maps work, but canonical Low/Medium/High template construction and minimum tier semantics belong to the Organizer-protocol follow-on. |
 | Organizer | implemented | Runtime stores no hard-coded Organizer model; host binding uses the selected model. |
 | Scientific behavior | deferred | State sections and some gates exist; prediction packets, surprise-driven transition checks, and full posture fixtures belong to the Organizer-protocol follow-on. |
-| Reinforcement | deferred | Medium reserved mappings and High verifier gate exist; a distinct High capacity template and adjudication operation remain in the Organizer-protocol follow-on. |
+| Reinforcement | implemented | Medium/High require reserved post-result capacity; High additionally requires a distinct context-separated verifier stage and completed permit-bound verifier record. |
 | Anti-lock-in | implemented | Medium/High scientific or decision `PASS` requires a completed checkpoint record. |
 | Coverage audit | implemented | Applicable `PASS` requires a completed audit with omission dispositions. |
 | Tool palette | deferred | Registry and candidate policy are implemented; direct-source, Brave, scholarly, and fetch-fallback worker adapters remain in the provider-portfolio follow-on. |
@@ -116,9 +116,9 @@ Status vocabulary: `implemented` means code, deterministic tests, and runtime-fa
 | Branch output | deferred | Canonical sections exist; deterministic branch-manifest and evidence-delta validators remain in the Organizer/worker follow-on. |
 | Canonical artifacts | implemented | Canonical JSON, immutable contract/capabilities, typed patches, events, and deterministic HTML are tested. |
 | Information preservation | implemented | Available evidence requires exact raw byte offsets and matching excerpts; invented/missing excerpts fail. |
-| Independence | deferred | Source-origin IDs are structural; claim-type-aware empirical promotion and independent-origin count enforcement remain in the evidence-semantics follow-on. |
+| Independence | implemented | Load-bearing claim type is explicit; empirical `PASS` requires two independent evidence origins, while source-of-record claims require direct T1 evidence. |
 | Non-vacuous PASS | implemented | Empty answer, empty/mismatched load-bearing set, and evidence-floor failures are tested. |
-| High verifier | deferred | The validator requires the declared separated-verifier fields; trusted verifier-packet provenance and non-self-attestation remain in the worker/Organizer follow-on, so High is not release-validated. |
+| High verifier | deferred | High now requires distinct reserved capacity and a completed permit-bound verifier record; trusted verifier-packet provenance and non-self-attestation remain in the worker/Organizer follow-on, so High is not release-validated. |
 | Host context | deferred | Contract ceilings exist; adapter/Organizer admitted-character measurement remains in the request-boundary follow-on. |
 | Local experiments | deferred | Local permits and no-egress envelope exist; typed experiment records and live integration request boundary remain in the Organizer follow-on. |
 | Async safety | deferred | Attempt consumption and owned-tail WAL recovery are implemented; bounded polling/resume/download enforcement awaits external worker adapters. |

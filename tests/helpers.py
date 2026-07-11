@@ -153,6 +153,18 @@ def confirmed_contract(
     contract = normalize_contract(draft_medium_contract())
     contract["tier"] = tier
     contract["posture"] = posture
+    if tier == "high":
+        contract["resource_envelope"]["physical_ceiling"]["organizer_pass"] = 2
+        contract["stage_permit_map"].append(
+            {
+                "stage": "context_separated_verification",
+                "category": "organizer_pass",
+                "route": "host",
+                "invocations": 1,
+                "count": 1,
+                "reserved": True,
+            }
+        )
     records = referenced_provider_records(contract, resolved)
     contract["confirmation"] = {
         "confirmed_by": "user",
@@ -172,6 +184,7 @@ def confirmed_demo_contract(
 ) -> dict[str, Any]:
     resolved = copy.deepcopy(load_provider_registry() if registry is None else registry)
     contract = draft_medium_contract()
+    contract["tier"] = "custom"
     contract["scout_route"] = route
     contract["resource_envelope"]["physical_ceiling"].update(
         {"probe": probe_ceiling, "host_retrieval": 0}
@@ -275,12 +288,14 @@ def make_complete_pass_session(
     session = root / f"complete-{tier}-{posture}-{uuid.uuid4().hex[:8]}"
     create_session(session, new_state("Choose a bounded implementation", contract, NOW, registry, {}))
 
-    actions = (
+    actions = [
         ("A1", "primary_scout", "host_retrieval", "host-web"),
         ("L1", "local_applicability", "local", "local"),
         ("A2", "anti_lock_in", "host_retrieval", "host-web"),
         ("A3", "verification", "host_retrieval", "host-web"),
-    )
+    ]
+    if tier == "high":
+        actions.append(("O1", "context_separated_verification", "organizer_pass", "host"))
     for action_id, stage, category, route in actions:
         acquire_permits(
             session,
@@ -371,7 +386,7 @@ def make_complete_pass_session(
                 "completed": True,
                 "context_separated": True,
                 "produced_candidate": False,
-                "action_id": "A3",
+                "action_id": "O1",
             }
         )
 
@@ -402,6 +417,7 @@ def make_complete_pass_session(
                 "scope": "fixture environment",
                 "qualifiers": [],
                 "load_bearing": True,
+                "claim_type": "source-of-record",
                 "status": "corroborated",
                 "supporting_evidence_ids": ["E1"],
                 "counter_evidence_ids": [],

@@ -150,6 +150,10 @@ def command_confirm(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         raise ValueError("prepared payload is missing binding or resolved_registry")
     if args.card_sha256 != binding.get("card_sha256"):
         raise ValueError("card hash does not match prepared contract")
+    if args.registry_sha256 != binding.get("registry_sha256"):
+        raise ValueError("registry hash does not match prepared registry")
+    if args.referenced_records_sha256 != binding.get("referenced_records_sha256"):
+        raise ValueError("referenced-records hash does not match prepared routes")
     recomputed = _binding(contract, registry)
     if recomputed.get("card_sha256") != binding.get("card_sha256"):
         raise ValueError("prepared contract bytes changed after presentation")
@@ -335,6 +339,8 @@ def build_parser() -> argparse.ArgumentParser:
     confirm = subparsers.add_parser("confirm", help="bind the exact displayed contract card")
     confirm.add_argument("--prepared", required=True)
     confirm.add_argument("--card-sha256", required=True)
+    confirm.add_argument("--registry-sha256", required=True)
+    confirm.add_argument("--referenced-records-sha256", required=True)
     confirm.add_argument("--confirmed-at", required=True)
     confirm.add_argument("--confirmed-by", required=True)
     _add_json_flag(confirm)

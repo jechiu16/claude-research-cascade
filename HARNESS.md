@@ -87,6 +87,8 @@ The card also records:
 "$PY" scripts/research_state.py confirm \
   --prepared prepared.json \
   --card-sha256 <displayed-card-hash> \
+  --registry-sha256 <displayed-registry-hash> \
+  --referenced-records-sha256 <displayed-route-records-hash> \
   --confirmed-at <timestamp> \
   --confirmed-by user \
   --json

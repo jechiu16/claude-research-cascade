@@ -130,6 +130,10 @@ class CliTests(unittest.TestCase):
             str(prepared_path),
             "--card-sha256",
             prepared_payload["binding"]["card_sha256"],
+            "--registry-sha256",
+            prepared_payload["binding"]["registry_sha256"],
+            "--referenced-records-sha256",
+            prepared_payload["binding"]["referenced_records_sha256"],
             "--confirmed-at",
             NOW,
             "--confirmed-by",
@@ -162,6 +166,10 @@ class CliTests(unittest.TestCase):
             str(self._write_json(prepared, "prepared-bad-hash.json")),
             "--card-sha256",
             "0" * 64,
+            "--registry-sha256",
+            prepared["binding"]["registry_sha256"],
+            "--referenced-records-sha256",
+            prepared["binding"]["referenced_records_sha256"],
             "--confirmed-at",
             NOW,
             "--confirmed-by",
@@ -184,6 +192,10 @@ class CliTests(unittest.TestCase):
             str(self._write_json(prepared, "prepared-mutated.json")),
             "--card-sha256",
             shown_hash,
+            "--registry-sha256",
+            prepared["binding"]["registry_sha256"],
+            "--referenced-records-sha256",
+            prepared["binding"]["referenced_records_sha256"],
             "--confirmed-at",
             NOW,
             "--confirmed-by",
@@ -193,6 +205,30 @@ class CliTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("prepared contract bytes changed", result.stderr)
+
+    def test_confirm_rejects_registry_hash_not_shown_to_user(self) -> None:
+        prepared = json.loads(
+            self.run_cli("prepare", "--contract", str(self.draft), "--json").stdout
+        )
+        result = self.run_cli(
+            "confirm",
+            "--prepared",
+            str(self._write_json(prepared, "prepared-bad-registry.json")),
+            "--card-sha256",
+            prepared["binding"]["card_sha256"],
+            "--registry-sha256",
+            "0" * 64,
+            "--referenced-records-sha256",
+            prepared["binding"]["referenced_records_sha256"],
+            "--confirmed-at",
+            NOW,
+            "--confirmed-by",
+            "user",
+            "--json",
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("registry hash does not match prepared registry", result.stderr)
 
     def test_cli_refuses_unconfirmed_contract(self) -> None:
         result = self.run_cli(

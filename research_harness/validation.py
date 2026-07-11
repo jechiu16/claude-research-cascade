@@ -436,6 +436,7 @@ def _claim_has_available_evidence(
 
 def _validate_pass(
     state: dict[str, Any],
+    events: list[dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
     raw_payloads: dict[str, bytes],
     evidence_map: dict[str, dict[str, Any]],
@@ -472,6 +473,11 @@ def _validate_pass(
         for source in state.get("sources", [])
         if isinstance(source, dict) and isinstance(source.get("id"), str)
     }
+    origins = {
+        origin.get("id"): origin
+        for origin in state.get("source_origins", [])
+        if isinstance(origin, dict) and isinstance(origin.get("id"), str)
+    }
     for claim_id in load_ids:
         claim = claims.get(claim_id)
         path = f"/claims/{claim_id}"
@@ -479,6 +485,9 @@ def _validate_pass(
             continue
         if claim.get("status") not in PASSING_CLAIM_STATUSES:
             _add(issues, "claim.status", "load-bearing claim status cannot clear PASS", path)
+        claim_type = claim.get("claim_type")
+        if claim_type not in {"source-of-record", "empirical", "local-observation"}:
+            _add(issues, "claim.type", "load-bearing claim type is missing or invalid", path)
         supporting = claim.get("supporting_evidence_ids")
         if not isinstance(supporting, list) or not supporting:
             _add(issues, "claim.evidence_missing", "load-bearing claim has no supporting evidence", path)
@@ -490,6 +499,26 @@ def _validate_pass(
         origin_ids = claim.get("source_origin_ids")
         if not isinstance(origin_ids, list) or not origin_ids:
             _add(issues, "claim.origin_missing", "load-bearing claim has no source origin", path)
+        evidence_origins = {
+            evidence_map[evidence_id].get("origin_id")
+            for evidence_id in supporting
+            if evidence_id in evidence_map
+        }
+        if isinstance(origin_ids, list) and set(origin_ids) != evidence_origins:
+            _add(issues, "claim.origin_mismatch", "claim origins differ from supporting evidence", path)
+        if claim_type == "empirical":
+            independent = {
+                origin_id
+                for origin_id in evidence_origins
+                if origins.get(origin_id, {}).get("independent") is True
+            }
+            if len(independent) < 2:
+                _add(
+                    issues,
+                    "claim.origin_independence",
+                    "empirical load-bearing claims require two independent source origins",
+                    path,
+                )
         for evidence_id in supporting:
             evidence = evidence_map.get(evidence_id)
             if evidence is None:
@@ -498,6 +527,20 @@ def _validate_pass(
                 _add(issues, "claim.entailment", "load-bearing evidence is not marked entailing", path)
             if evidence.get("applicability") != "checked":
                 _add(issues, "claim.applicability", "load-bearing evidence applicability is not checked", path)
+        if claim_type == "source-of-record":
+            direct_primary = any(
+                evidence_map.get(evidence_id, {}).get("source_tier") == "T1"
+                and sources.get(evidence_map.get(evidence_id, {}).get("source_id"), {}).get("direct_fetch")
+                is True
+                for evidence_id in supporting
+            )
+            if not direct_primary:
+                _add(
+                    issues,
+                    "claim.source_of_record_missing",
+                    "source-of-record claim requires a directly fetched T1 source",
+                    path,
+                )
 
     contract = state.get("contract", {})
     posture = contract.get("posture")
@@ -531,14 +574,40 @@ def _validate_pass(
         for joint in state.get("inference_joints", [])
     ):
         _add(issues, "posture.decision_joint_missing", "decision inference joint review is missing", "/inference_joints")
-    if tier == "high" and not any(
-        item.get("kind") == "verifier"
+    high_verifiers = [
+        item
+        for item in verification
+        if item.get("kind") == "verifier"
         and item.get("completed") is True
         and item.get("context_separated") is True
         and item.get("produced_candidate") is False
-        for item in verification
-    ):
+    ]
+    if tier == "high" and not high_verifiers:
         _add(issues, "tier.high_verifier_missing", "High PASS requires a context-separated verifier", "/verification")
+    elif tier == "high":
+        bound_actions = {
+            event.get("action_id")
+            for event in events
+            if event.get("event") == "permit_acquired"
+            and event.get("stage") == "context_separated_verification"
+            and event.get("category") == "organizer_pass"
+            and event.get("route") == "host"
+        }
+        completed_actions = {
+            event.get("action_id")
+            for event in events
+            if event.get("event") == "attempt_status" and event.get("status") == "completed"
+        }
+        if not any(
+            verifier.get("action_id") in bound_actions & completed_actions
+            for verifier in high_verifiers
+        ):
+            _add(
+                issues,
+                "tier.high_verifier_unbound",
+                "High verifier is not bound to a completed reserved verifier action",
+                "/verification",
+            )
 
 
 def _validate_partial(
@@ -625,7 +694,7 @@ def _validate_loaded_session(
     if status not in VALID_DELIVERY_STATUSES:
         _add(issues, "status.invalid", "delivery status is invalid", "/summary/status")
     elif status == "PASS":
-        _validate_pass(state, artifacts, raw_payloads, evidence_map, issues)
+        _validate_pass(state, events, artifacts, raw_payloads, evidence_map, issues)
     elif status == "PARTIAL":
         _validate_partial(state, artifacts, raw_payloads, evidence_map, issues)
     if check_report:

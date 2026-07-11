@@ -14,7 +14,7 @@ from research_harness.providers import (
     provider_registry_sha256,
     validate_provider_registry,
 )
-from tests.helpers import confirmed_medium_contract, draft_medium_contract, write_overlay
+from tests.helpers import confirmed_contract, confirmed_medium_contract, draft_medium_contract, write_overlay
 
 
 class ContractTests(unittest.TestCase):
@@ -83,6 +83,37 @@ class ContractTests(unittest.TestCase):
         self.assertIn(
             "exactly one primary_scout mapping with one invocation is required",
             validate_contract(contract, self.registry),
+        )
+
+    def test_medium_requires_reserved_post_result_reinforcement(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract["stage_permit_map"] = [
+            mapping
+            for mapping in contract["stage_permit_map"]
+            if mapping["stage"] not in {"anti_lock_in", "verification"}
+        ]
+        self.assertIn(
+            "medium and high tiers require reserved post-result reinforcement",
+            validate_contract(contract, self.registry),
+        )
+
+    def test_high_requires_reserved_context_separated_verifier_capacity(self) -> None:
+        contract = confirmed_contract("high", "decision", self.registry)
+        verifier = next(
+            mapping
+            for mapping in contract["stage_permit_map"]
+            if mapping["stage"] == "context_separated_verification"
+        )
+        self.assertTrue(verifier["reserved"])
+        missing = copy.deepcopy(contract)
+        missing["stage_permit_map"] = [
+            mapping
+            for mapping in missing["stage_permit_map"]
+            if mapping["stage"] != "context_separated_verification"
+        ]
+        self.assertIn(
+            "high tier requires reserved context-separated verifier capacity",
+            validate_contract(missing, self.registry),
         )
 
     def test_host_external_and_local_envelopes_are_distinct(self) -> None:

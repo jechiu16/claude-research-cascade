@@ -118,7 +118,7 @@
       "enabled": true,
       "roles": ["organizer", "auditor"],
       "action_categories": ["organizer_pass"],
-      "stage_capabilities": ["frame_and_predict", "coverage_audit", "final_inference_review"],
+      "stage_capabilities": ["frame_and_predict", "coverage_audit", "final_inference_review", "context_separated_verification"],
       "request_multiplicity": {"organizer_pass": 1},
       "execution_binding": "host_native_observed",
       "adoption_status": "baseline",

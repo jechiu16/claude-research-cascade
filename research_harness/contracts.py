@@ -230,6 +230,27 @@ def _validate_contract_core(
         if _is_count(ceiling) and total > ceiling:
             errors.append(f"stage mappings exceed physical ceiling {category}")
 
+    tier = contract.get("tier")
+    reserved_reinforcement = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping, dict)
+        and mapping.get("reserved") is True
+        and mapping.get("stage") in {"anti_lock_in", "verification", "coverage_audit"}
+    ]
+    if tier in {"medium", "high"} and not reserved_reinforcement:
+        errors.append("medium and high tiers require reserved post-result reinforcement")
+    context_verifiers = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping, dict)
+        and mapping.get("stage") == "context_separated_verification"
+        and mapping.get("reserved") is True
+        and mapping.get("category") == "organizer_pass"
+    ]
+    if tier == "high" and len(context_verifiers) != 1:
+        errors.append("high tier requires reserved context-separated verifier capacity")
+
     evidence_floor = contract.get("evidence_floor")
     if not isinstance(evidence_floor, dict) or not _is_positive_count(
         evidence_floor.get("minimum_load_bearing_claims") if isinstance(evidence_floor, dict) else None

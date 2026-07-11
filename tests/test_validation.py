@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from research_harness.artifacts import ingest_fetched_source
 from research_harness.storage import apply_state_patch, load_state
 from research_harness.validation import validate_session
 from tests.helpers import (
@@ -81,6 +82,131 @@ class ValidationTests(unittest.TestCase):
 
     def test_complete_high_decision_with_separated_verifier_passes(self) -> None:
         session = make_complete_pass_session(self.root, "high", "decision")
+        report = validate_session(session)
+        self.assertTrue(report.ok, report.to_dict())
+
+    def test_high_verifier_record_must_bind_reserved_verifier_action(self) -> None:
+        session = make_complete_pass_session(self.root, "high", "decision")
+        state = load_state(session)
+        verifier_index = next(
+            index
+            for index, item in enumerate(state["verification"])
+            if item.get("kind") == "verifier"
+        )
+        apply_state_patch(
+            session,
+            [
+                {
+                    "op": "replace",
+                    "path": f"/verification/{verifier_index}/action_id",
+                    "value": "FORGED",
+                }
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+        report = validate_session(session)
+        self.assertIn("tier.high_verifier_unbound", {issue.code for issue in report.errors})
+
+    def test_empirical_load_bearing_claim_needs_two_independent_origins(self) -> None:
+        session = make_complete_pass_session(self.root, "high", "decision")
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [{"op": "replace", "path": "/claims/0/claim_type", "value": "empirical"}],
+            state["session"]["revision"],
+            NOW,
+        )
+        report = validate_session(session)
+        self.assertIn("claim.origin_independence", {issue.code for issue in report.errors})
+
+    def test_empirical_claim_with_two_independent_raw_origins_passes(self) -> None:
+        session = make_complete_pass_session(self.root, "high", "decision")
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {
+                    "op": "add",
+                    "path": "/source_origins/-",
+                    "value": {"id": "O2", "kind": "independent-study", "independent": True},
+                },
+                {
+                    "op": "add",
+                    "path": "/sources/-",
+                    "value": {
+                        "id": "S2",
+                        "origin_id": "O2",
+                        "tier": "T1",
+                        "title": "Independent fixture",
+                        "direct_fetch": True,
+                    },
+                },
+                {
+                    "op": "add",
+                    "path": "/retrieval_occurrences/-",
+                    "value": {
+                        "id": "R2",
+                        "provider_id": "host-web",
+                        "source_id": "S2",
+                        "action_id": "A2",
+                    },
+                },
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+        payload = b"Independent empirical finding.\n"
+        source = self.root / "independent.txt"
+        source.write_bytes(payload)
+        ingest_fetched_source(
+            session,
+            source,
+            "A2",
+            "text/plain",
+            "S2",
+            "R2",
+            "public",
+            "session",
+            False,
+            NOW,
+        )
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {
+                    "op": "add",
+                    "path": "/evidence/-",
+                    "value": {
+                        "id": "E2",
+                        "artifact_id": "A2",
+                        "source_id": "S2",
+                        "origin_id": "O2",
+                        "source_tier": "T1",
+                        "excerpt": payload.decode("utf-8"),
+                        "excerpt_start": 0,
+                        "excerpt_end": len(payload),
+                        "entailment": "entailed",
+                        "applicability": "checked",
+                        "retrieved_at": NOW,
+                    },
+                },
+                {"op": "replace", "path": "/claims/0/claim_type", "value": "empirical"},
+                {
+                    "op": "replace",
+                    "path": "/claims/0/supporting_evidence_ids",
+                    "value": ["E1", "E2"],
+                },
+                {
+                    "op": "replace",
+                    "path": "/claims/0/source_origin_ids",
+                    "value": ["O1", "O2"],
+                },
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
         report = validate_session(session)
         self.assertTrue(report.ok, report.to_dict())
 
