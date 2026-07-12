@@ -74,12 +74,18 @@ class RenderingTests(unittest.TestCase):
         document = render_html(self.state, self.report)
         self.assertIn('<html lang="zh-Hant-TW">', document)
         for label in (
-            "有界研究 / Canonical 投影",
+            "有界研究 / 正式狀態投影",
             "有界結論",
-            "研究契約",
-            "Canonical Claims",
-            "證據脈絡",
-            "來源與起源",
+            "研究工作階段",
+            "成本層級",
+            "研究模式",
+            "初始搜尋路由",
+            "實體請求上限",
+            "正式主張",
+            "證據紀錄",
+            "資料檔",
+            "來源層級",
+            "上下文分離",
             "驗證",
             "工程交接",
             "待釐清問題",
@@ -114,15 +120,44 @@ class RenderingTests(unittest.TestCase):
         state["open_questions"] = []
         document = render_html(state, self.report)
         for label in (
-            "尚未記錄 canonical claim",
-            "尚未納入 evidence record",
-            "尚未記錄來源",
-            "尚未記錄驗證",
-            "尚未記錄安全行動",
-            "尚未記錄",
+            "尚未記錄正式主張",
+            "尚未納入證據紀錄",
         ):
             with self.subTest(label=label):
                 self.assertIn(label, document)
+        unnamed_state = copy.deepcopy(self.state)
+        unnamed_state["claims"] = [{}]
+        self.assertIn("未命名主張", render_html(unnamed_state, self.report))
+
+    def test_boolean_chrome_renders_true_and_false_explicitly(self) -> None:
+        self.state["engineering_handoff"]["safe_actions"] = [
+            {"id": "A1", "description": "test action", "reversible": True, "depends_on_claim_ids": []}
+        ]
+        self.state["verification"][0]["context_separated"] = True
+        true_document = render_html(self.state, self.report)
+        false_state = copy.deepcopy(self.state)
+        false_state["sources"][0]["direct_fetch"] = False
+        false_state["verification"][0]["completed"] = False
+        false_state["verification"][0]["context_separated"] = False
+        false_state["engineering_handoff"]["safe_actions"][0]["reversible"] = False
+        false_document = render_html(false_state, self.report)
+
+        for fragment in (
+            "<td>是</td>",
+            "<p>已完成：是</p>",
+            "<p>上下文分離：是</p>",
+            "<p>可逆：是</p>",
+        ):
+            with self.subTest(fragment=fragment, state="true"):
+                self.assertIn(fragment, true_document)
+        for fragment in (
+            "<td>否</td>",
+            "<p>已完成：否</p>",
+            "<p>上下文分離：否</p>",
+            "<p>可逆：否</p>",
+        ):
+            with self.subTest(fragment=fragment, state="false"):
+                self.assertIn(fragment, false_document)
 
     def test_invalid_session_is_rendered_with_explicit_invalid_label(self) -> None:
         state = load_state(self.session)

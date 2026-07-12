@@ -67,7 +67,7 @@ def _artifact_link(artifact: dict[str, Any] | None) -> str:
 def _render_claims(state: dict[str, Any]) -> str:
     claims = state.get("claims", [])
     if not claims:
-        return _empty("尚未記錄 canonical claim")
+        return _empty("尚未記錄正式主張")
     rows: list[str] = []
     for claim in claims:
         load = _pill("關鍵主張", "critical") if claim.get("load_bearing") else ""
@@ -77,7 +77,7 @@ def _render_claims(state: dict[str, Any]) -> str:
         rows.append(
             '<article class="claim">'
             f'<div class="claim-head"><code>{_escape(claim.get("id"))}</code>{load}{status}</div>'
-            f'<h3>{_escape(claim.get("text", "未命名 claim"))}</h3>'
+            f'<h3>{_escape(claim.get("text", "未命名主張"))}</h3>'
             f'<p><strong>範圍:</strong> {_escape(claim.get("scope", "未記錄"))}</p>'
             f'<p><strong>適用性:</strong> {_escape(claim.get("applicability", "未檢查"))}</p>'
             f'<p><strong>支持證據:</strong> {evidence}</p>'
@@ -91,7 +91,7 @@ def _render_claims(state: dict[str, Any]) -> str:
 def _render_evidence(state: dict[str, Any]) -> str:
     evidence_records = state.get("evidence", [])
     if not evidence_records:
-        return _empty("尚未納入 evidence record")
+        return _empty("尚未納入證據紀錄")
     artifacts = {
         artifact.get("id"): artifact
         for artifact in state.get("artifact_index", [])
@@ -112,10 +112,10 @@ def _render_evidence(state: dict[str, Any]) -> str:
             '<div class="evidence-meta">'
             f'<span>來源 {_escape(evidence.get("source_id"))}</span>'
             f'<span>起源 {_escape(evidence.get("origin_id"))}</span>'
-            f'<span>Artifact {_escape(evidence.get("artifact_id"))}{_artifact_link(artifact)}</span>'
+            f'<span>資料檔 {_escape(evidence.get("artifact_id"))}{_artifact_link(artifact)}</span>'
             "</div>"
             f'<blockquote>{_escape(bounded)}</blockquote>{truncation}'
-            f'<p class="offsets">原文 byte 範圍: {_escape(evidence.get("excerpt_start"))}..'
+            f'<p class="offsets">原文位元組範圍: {_escape(evidence.get("excerpt_start"))}..'
             f'{_escape(evidence.get("excerpt_end"))}</p>'
             "</details>"
         )
@@ -148,7 +148,7 @@ def _render_sources(state: dict[str, Any]) -> str:
             "</tr>"
         )
     return (
-        '<div class="table-wrap"><table><thead><tr><th>ID</th><th>來源</th><th>Tier</th>'
+        '<div class="table-wrap"><table><thead><tr><th>ID</th><th>資料檔</th><th>來源層級</th>'
         '<th>起源</th><th>起源類型</th><th>直接擷取</th></tr></thead><tbody>'
         + "".join(rows)
         + "</tbody></table></div>"
@@ -162,8 +162,8 @@ def _render_verification(state: dict[str, Any]) -> str:
     return '<div class="verification-grid">' + "".join(
         '<article class="verification">'
         f'<code>{_escape(item.get("id"))}</code><h3>{_escape(item.get("kind", "check"))}</h3>'
-        f'<p>已完成: {"是" if item.get("completed") is True else "否"}</p>'
-        f'<p>Context 分離: {"是" if item.get("context_separated") is True else "未記錄"}</p>'
+        f'<p>已完成：{"是" if item.get("completed") is True else "否"}</p>'
+        f'<p>上下文分離：{"是" if item.get("context_separated") is True else "否"}</p>'
         "</article>"
         for item in records
     ) + "</div>"
@@ -198,8 +198,8 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
     safe_action_html = _empty("尚未記錄安全行動") if not safe_actions else "".join(
         '<article class="safe-action">'
         f'<h3>{_escape(action.get("id"))}: {_escape(action.get("description", "安全行動"))}</h3>'
-        f'<p>可逆: {"是" if action.get("reversible") is True else "否"}</p>'
-        f'<p>依賴 claims: {_escape(", ".join(action.get("depends_on_claim_ids", [])) or "無")}</p>'
+        f'<p>可逆：{"是" if action.get("reversible") is True else "否"}</p>'
+        f'<p>依賴主張：{_escape(", ".join(action.get("depends_on_claim_ids", [])) or "無")}</p>'
         "</article>"
         for action in safe_actions
         if isinstance(action, dict)
@@ -211,7 +211,7 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta data-state-sha256="{canonical_hash}" content="canonical-state-binding">
-  <title>研究 Session {_escape(state.get("session", {}).get("id"))}</title>
+  <title>研究工作階段 {_escape(state.get("session", {}).get("id"))}</title>
   <style>
     :root {{ --ink:#18201f; --muted:#60706b; --paper:#f4f0e6; --panel:#fffdf7;
       --line:#c8c0ad; --accent:#a33b20; --forest:#21564a; --gold:#c49335; --bad:#8d2118; }}
@@ -267,7 +267,7 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
 </head>
 <body>
   <header>
-    <div class="eyebrow">有界研究 / Canonical 投影</div>
+    <div class="eyebrow">有界研究 / 正式狀態投影</div>
     <h1>{_escape(state.get("framing", {}).get("question", "研究結果"))}</h1>
     <div class="status-line"><span class="verdict {status_class}">{_escape(display_status)}</span>
       {_pill(contract.get("tier", "unknown"), "status")}{_pill(contract.get("posture", "unknown"), "status")}</div>
@@ -277,14 +277,14 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
     <section class="decision"><div class="eyebrow">有界結論</div><h2>結論</h2>
       <p class="decision-text">{_escape(summary.get("decision", "尚未記錄結論"))}</p>
       <p><strong>更新時間:</strong> {_escape(state.get("session", {}).get("updated_at"))}</p></section>
-    <section><h2>研究契約</h2><div class="meta-grid">
-      <div class="meta-card"><strong>Tier</strong><br>{_escape(contract.get("tier"))}</div>
-      <div class="meta-card"><strong>Posture</strong><br>{_escape(contract.get("posture"))}</div>
-      <div class="meta-card"><strong>Scout route</strong><br>{_escape(contract.get("scout_route"))}</div>
+    <section><h2>研究工作階段</h2><div class="meta-grid">
+      <div class="meta-card"><strong>成本層級</strong><br>{_escape(contract.get("tier"))}</div>
+      <div class="meta-card"><strong>研究模式</strong><br>{_escape(contract.get("posture"))}</div>
+      <div class="meta-card"><strong>初始搜尋路由</strong><br>{_escape(contract.get("scout_route"))}</div>
       <div class="meta-card"><strong>關鍵主張下限</strong><br>{_escape(contract.get("evidence_floor", {}).get("minimum_load_bearing_claims"))}</div>
-    </div><details><summary>Physical request 上限</summary><table><tbody>{quota_rows}</tbody></table></details></section>
-    <section><h2>Canonical Claims</h2>{_render_claims(state)}</section>
-    <section><h2>證據脈絡</h2>{_render_evidence(state)}</section>
+    </div><details><summary>實體請求上限</summary><table><tbody>{quota_rows}</tbody></table></details></section>
+    <section><h2>正式主張</h2>{_render_claims(state)}</section>
+    <section><h2>證據紀錄</h2>{_render_evidence(state)}</section>
     <section><h2>來源與起源</h2>{_render_sources(state)}</section>
     <section><h2>驗證</h2>{_render_verification(state)}</section>
     <section><h2>工程交接</h2>{safe_action_html}
@@ -292,7 +292,7 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
       <h3>驗收測試</h3>{_text_list(state.get("engineering_handoff", {}).get("acceptance_tests", []))}</section>
     <section><h2>待釐清問題</h2>{_text_list(state.get("open_questions", []))}</section>
     <section><h2>決定性檢查結果</h2>{_render_validation(report)}</section>
-    <footer>本報告只從 canonical JSON 決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。</footer>
+    <footer>本報告只從唯一正式 JSON 狀態決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。</footer>
   </main>
 </body>
 </html>

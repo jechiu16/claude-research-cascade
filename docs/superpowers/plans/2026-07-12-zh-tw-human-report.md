@@ -38,11 +38,18 @@ def test_report_uses_traditional_chinese_chrome(self) -> None:
     document = render_html(self.state, self.report)
     self.assertIn('<html lang="zh-Hant-TW">', document)
     for label in (
-        "有界研究 / Canonical 投影",
+        "有界研究 / 正式狀態投影",
         "有界結論",
-        "研究契約",
-        "Canonical Claims",
-        "證據脈絡",
+        "研究工作階段",
+        "成本層級",
+        "研究模式",
+        "初始搜尋路由",
+        "實體請求上限",
+        "正式主張",
+        "證據紀錄",
+        "資料檔",
+        "來源層級",
+        "上下文分離",
         "來源與起源",
         "驗證",
         "工程交接",
@@ -78,15 +85,15 @@ def test_empty_states_and_boolean_labels_are_traditional_chinese(self) -> None:
     state["open_questions"] = []
     document = render_html(state, self.report)
     for label in (
-        "尚未記錄 canonical claim",
-        "尚未納入 evidence record",
-        "尚未記錄來源",
-        "尚未記錄驗證",
-        "尚未記錄安全行動",
+        "尚未記錄正式主張",
+        "尚未納入證據紀錄",
         "尚未記錄",
     ):
         with self.subTest(label=label):
             self.assertIn(label, document)
+
+Add direct true and false assertions for `<td>是/否</td>`, `已完成：是/否`,
+`上下文分離：是/否`, and `可逆：是/否`.
 ```
 
 - [ ] **Step 2: Run focused tests and verify RED**
@@ -109,11 +116,11 @@ In `research_harness/rendering.py`, replace renderer-owned English strings with 
 ```text
 None recorded -> 尚未記錄
 raw artifact -> 原始資料
-No canonical claims recorded -> 尚未記錄 canonical claim
+No canonical claims recorded -> 尚未記錄正式主張
 LOAD-BEARING -> 關鍵主張
 No qualifiers -> 無限定條件
 none -> 無
-Untitled claim -> 未命名 claim
+Untitled claim -> 未命名主張
 Scope -> 範圍
 Applicability -> 適用性
 Supporting evidence -> 支持證據
@@ -121,12 +128,12 @@ Qualifiers and flip condition -> 限定條件與翻轉條件
 Would change if -> 重新評估條件
 not recorded -> 未記錄
 not checked -> 未檢查
-No evidence records admitted -> 尚未納入 evidence record
+No evidence records admitted -> 尚未納入證據紀錄
 Excerpt truncated for display. -> 摘錄過長，顯示內容已截斷。
 Source -> 來源
 Origin -> 起源
-Artifact -> Artifact
-Exact bytes -> 原文 byte 範圍
+Artifact -> 資料檔
+Exact bytes -> 原文位元組範圍
 No sources recorded -> 尚未記錄來源
 Untitled source -> 未命名來源
 Origin kind -> 起源類型
@@ -134,24 +141,29 @@ Direct fetch -> 直接擷取
 yes/no -> 是/否
 No verification records -> 尚未記錄驗證
 Completed -> 已完成
-Context separated -> Context 分離
+Context separated -> 上下文分離
 All deterministic gates passed. -> 所有決定性檢查均已通過。
 No safe action recorded -> 尚未記錄安全行動
 Safe action -> 安全行動
 Reversible -> 可逆
-Depends on claims -> 依賴 claims
-Research Session -> 研究 Session
-Bounded Research / Canonical Projection -> 有界研究 / Canonical 投影
+Depends on claims -> 依賴主張
+Research Session -> 研究工作階段
+Bounded Research / Canonical Projection -> 有界研究 / 正式狀態投影
 Research result -> 研究結果
 Bounded answer -> 有界結論
 Decision -> 結論
 No decision recorded -> 尚未記錄結論
 Updated -> 更新時間
-Contract -> 研究契約
-Scout route -> Scout route
+Contract -> 研究工作階段
+Tier -> 成本層級
+Posture -> 研究模式
+Scout route -> 初始搜尋路由
 Load-bearing floor -> 關鍵主張下限
-Physical request ceilings -> Physical request 上限
-Evidence Lineage -> 證據脈絡
+Physical request ceilings -> 實體請求上限
+Canonical Claims -> 正式主張
+Evidence Lineage -> 證據紀錄
+Artifact table -> 資料檔
+Source tier -> 來源層級
 Sources and Origins -> 來源與起源
 Verification -> 驗證
 Engineering Handoff -> 工程交接
@@ -170,7 +182,7 @@ Set `<html lang="zh-Hant-TW">`. Prepend the local font stack with:
 Use this footer verbatim:
 
 ```text
-本報告只從 canonical JSON 決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。
+本報告只從唯一正式 JSON 狀態決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。
 ```
 
 Do not translate `issue.level`, `issue.code`, `issue.message`, `issue.path`, status values, tier/posture values, source titles, or evidence excerpts.
