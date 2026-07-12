@@ -10,6 +10,48 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DocumentationTests(unittest.TestCase):
+    def test_canonical_trigger_card_is_traditional_chinese_and_kernel_free(self) -> None:
+        text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        start = text.index("<!-- PURE_TRIGGER_CARD_START -->")
+        end = text.index("<!-- PURE_TRIGGER_CARD_END -->", start)
+        card = text[start:end].splitlines()[1:]
+        self.assertLessEqual(len(card), 7)
+        self.assertTrue(card[0].startswith("問題："))
+        self.assertTrue(card[1].startswith("建議："))
+        self.assertIn("直接取得至少兩個不同來源", "\n".join(card))
+        forbidden = ("hash", "route", "permit", "cli", "schema", "posture")
+        self.assertFalse(any(term in "\n".join(card).lower() for term in forbidden))
+
+    def test_codex_binding_points_to_canonical_skill_without_alternate_tier_semantics(self) -> None:
+        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("[SKILL.md](SKILL.md)", text)
+        self.assertIn("sole protocol", text.lower())
+        self.assertNotIn("PURE_TRIGGER_CARD", text)
+        self.assertNotIn("Choosing a tier", text)
+        for line in ("Low:", "Medium:", "High:", "Start:"):
+            self.assertNotIn(line, text)
+
+    def test_host_protocol_selects_once_and_reports_phase_only_progress(self) -> None:
+        text = (ROOT / "SKILL.md").read_text(encoding="utf-8").lower()
+        self.assertIn("choosing a tier is the only confirmation", text)
+        self.assertIn("phase-only progress", text)
+        self.assertIn("low", text)
+        self.assertIn("medium", text)
+        self.assertIn("high", text)
+
+    def test_root_skill_is_complete_and_harness_is_optional(self) -> None:
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        harness = (ROOT / "HARNESS.md").read_text(encoding="utf-8")
+        self.assertNotIn("Read [HARNESS.md](HARNESS.md)", skill)
+        self.assertIn("optional reference", harness.lower())
+        self.assertIn("not required", harness.lower())
+
+    def test_discovery_wrappers_do_not_define_a_second_protocol(self) -> None:
+        for relative in (".claude/skills/deep/SKILL.md", ".agents/skills/deep/SKILL.md"):
+            text = (ROOT / relative).read_text(encoding="utf-8").lower()
+            self.assertIn("../../../skill.md", text)
+            self.assertNotIn("harness.md are the only protocol sources", text)
+
     def test_package_versions_are_consistent(self) -> None:
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         from research_harness import __version__
