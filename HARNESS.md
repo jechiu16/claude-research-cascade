@@ -184,6 +184,8 @@ Each session owns:
 
 Do not persist a second full Markdown report. The host can read canonical JSON directly; humans use HTML.
 
+When the user's working language is Traditional Chinese, author human-facing canonical narrative fields in Traditional Chinese before validation and rendering. Preserve exact evidence excerpts, source titles, identifiers, URLs, hashes, provider IDs, status tokens, and machine diagnostics in their original form. The deterministic renderer does not call a translation model.
+
 Secret-classified data never enters raw storage. Local-sensitive artifacts require redaction review and never enter HTML. Provider payload retention and HTML inclusion must fit the session's immutable storage-rights snapshot.
 
 Purge is a semantic transition: downgrade affected claims and verdict first, persist authorization, remove bytes, leave a tombstone, validate, and rerender. Recovery only resumes that persisted authorization.

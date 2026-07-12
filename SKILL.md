@@ -45,4 +45,6 @@ with zero network, zero keys, and zero cost. If it prints
 | Human report | `research_state.py render <session> --json` |
 | Language | Answer in the user's language; use English worker queries only when a bound route requires it |
 
+When the user's working language is Traditional Chinese, author human-facing canonical narrative fields in Traditional Chinese before validation and rendering. Preserve exact evidence excerpts, source titles, identifiers, URLs, hashes, provider IDs, status tokens, and machine diagnostics in their original form. The deterministic renderer does not call a translation model.
+
 Use the project virtual environment when available. Keep session state, raw artifacts, events, and `report.html` under a host-sanctioned session directory.

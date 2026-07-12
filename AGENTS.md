@@ -40,4 +40,6 @@ First-run sanity check: `"$PY" "$AGENT_DEEP_RESEARCH_DIR/scripts/research_state.
 | Delivery gate | `validate`; if true, `render` the hash-bound HTML |
 | Continuing development | Hand off decision, claims, disputes, safe reversible actions, acceptance tests, and flip conditions |
 
+When the user's working language is Traditional Chinese, author human-facing canonical narrative fields in Traditional Chinese before validation and rendering. Preserve exact evidence excerpts, source titles, identifiers, URLs, hashes, provider IDs, status tokens, and machine diagnostics in their original form. The deterministic renderer does not call a translation model.
+
 All JSON commands write exactly one object on stdout with `--json`; errors and progress belong on stderr. Keep raw local/user material private unless the user explicitly authorizes external egress after the relevant adapter exists.
