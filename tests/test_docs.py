@@ -143,6 +143,18 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("credential", combined)
         self.assertIn("execution readiness", combined)
 
+    def test_organizer_docs_define_traditional_chinese_report_boundary(self) -> None:
+        for relative in ("SKILL.md", "AGENTS.md", "HARNESS.md"):
+            with self.subTest(path=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("Traditional Chinese", text)
+                self.assertIn("exact evidence excerpts", text)
+                self.assertIn("source titles", text)
+        for relative in ("README.md", "README.zh-TW.md"):
+            with self.subTest(path=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("zh-Hant-TW", text)
+
 
 if __name__ == "__main__":
     unittest.main()

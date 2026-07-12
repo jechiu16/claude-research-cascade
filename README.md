@@ -152,7 +152,7 @@ Each session owns four artifacts:
 | `state.json` | Canonical semantic state |
 | `events.jsonl` | Append-only, sequence-numbered hash chain |
 | `raw/` | Immutable, provenance-bound provider or local bytes |
-| `report.html` | Human view bound to the canonical state hash |
+| `report.html` | Human view bound to the canonical state hash; declares `zh-Hant-TW`, uses Traditional Chinese interface copy, and preserves source/evidence text in its original language |
 
 See [HARNESS.md](HARNESS.md) for the complete host-neutral protocol.
 

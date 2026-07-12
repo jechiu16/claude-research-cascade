@@ -160,7 +160,7 @@ flowchart TD
 | `state.json` | Canonical semantic state |
 | `events.jsonl` | Append-only、sequence-numbered hash chain |
 | `raw/` | Immutable、provenance-bound provider／local bytes |
-| `report.html` | 與 canonical state hash 綁定的人類報告 |
+| `report.html` | 與 canonical state hash 綁定的人類報告；宣告 `zh-Hant-TW`、使用 Traditional Chinese 介面文案，並保留 source/evidence text 的原始語言 |
 
 完整 host-neutral protocol 見 [HARNESS.md](HARNESS.md)。
 
