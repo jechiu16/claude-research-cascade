@@ -67,9 +67,9 @@ Agent Deep Research Trigger 把這些限制做成可執行規則：
 
 ## 快速開始
 
-跟著這一條 path，從 checkout 走到已確認的 `/deep` request：
+從 clone repository 到確認一個 `/deep` request，請依序完成以下步驟：
 
-1. Clone 並安裝一份 checkout：
+1. Clone repository 並完成安裝：
 
 ```bash
 git clone https://github.com/jechiu16/agent-deep-research-trigger.git \
@@ -93,7 +93,7 @@ python3 -m venv .venv
 ```
 
 Demo 會走完 permit -> request boundary -> occurrence -> validation -> report；它的
-no-network route 在結構上不能支持真實 claim。
+no-network route 在結構上無法支援真實 claim。
 
 3. 在設定 spend 前檢查 route readiness：
 
@@ -112,7 +112,7 @@ cp .env.example .env
 # 編輯 .env，只加入預計使用的 provider key。
 ```
 
-5. 把同一份 checkout link 到任一或兩個 host：
+5. 將同一份 repository 連結到一個或兩個 host 的 skill 目錄：
 
 ```bash
 mkdir -p "$HOME/.claude/skills" "$HOME/.agents/skills"
@@ -122,7 +122,7 @@ ln -s "$PWD" "$HOME/.agents/skills/deep"
 
 Repo 已包含 `.claude/skills` 與 `.agents/skills` 的 project-local discovery wrapper。
 
-6. Link 後，開啟新的 Claude Code 或 Codex session，讓 host discovery 讀到 skill。
+6. 建立連結後，開啟新的 Claude Code 或 Codex session，讓 host discovery 載入這個 skill。
 
 7. 輸入 `/deep <question>`：
 
@@ -130,8 +130,7 @@ Repo 已包含 `.claude/skills` 與 `.agents/skills` 的 project-local discovery
 /deep 比較 SQLite 與 DuckDB，哪個更適合當本機分析引擎預設值？
 ```
 
-先 inspect exact contract card，再明確確認 card 與 binding hashes，之後才可 spend。Card
-會顯示：
+先檢視完整的 contract card，確認 card 與 binding hashes 後，才會執行 spend。Card 會顯示：
 
 - posture：`lookup`、`synthesis`、`scientific` 或 `decision`；
 - tier：`low`、`medium`、`high` 或 custom request envelope；

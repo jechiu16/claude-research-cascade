@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import unittest
+import json
 import re
+import unittest
 from pathlib import Path
 
 
@@ -20,13 +21,31 @@ class DocumentationTests(unittest.TestCase):
 
     def test_beta5_release_metadata_is_coherent(self) -> None:
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        registry = (ROOT / "research_harness/provider_registry.json").read_text(
-            encoding="utf-8"
+        registry = json.loads(
+            (ROOT / "research_harness/provider_registry.json").read_text(
+                encoding="utf-8"
+            )
         )
         self.assertTrue(changelog.startswith("# Changelog\n"))
         self.assertIn("## 2.0.0b5", changelog.split("## 2.0.0b4", 1)[0])
+        self.assertLess(changelog.index("## 2.0.0b5"), changelog.index("## 2.0.0b4"))
+        self.assertNotRegex(changelog, r"^## \[Unreleased\]\s*$", re.MULTILINE)
         self.assertNotIn("current package version is the `2.0.0b2`", changelog)
-        self.assertNotIn("not yet enabled pending a live occurrence", registry)
+        openai_deep = next(provider for provider in registry["providers"] if provider["id"] == "openai-deep")
+        self.assertTrue(openai_deep["enabled"])
+        self.assertEqual(openai_deep["adoption_status"], "validated")
+        self.assertIn(
+            "live-occurrence-2026-07-12-rfc9110-o4-mini-deep-research",
+            openai_deep["adoption_evidence"],
+        )
+        self.assertIn(
+            "adoption gate: enabled after the 2026-07-12 live adoption occurrence",
+            openai_deep["storage_rights"]["source"],
+        )
+        self.assertNotIn(
+            "not yet enabled pending a live occurrence",
+            json.dumps(registry, ensure_ascii=False),
+        )
 
     def test_readmes_document_one_real_first_use_path(self) -> None:
         expected_session_copy = {
@@ -39,6 +58,29 @@ class DocumentationTests(unittest.TestCase):
             self.assertIn("/deep", text)
             self.assertIn(session_copy, text)
             self.assertNotIn("golden transcript", text.lower())
+
+    def test_quickstarts_keep_first_use_steps_in_order(self) -> None:
+        expected_session_copy = {
+            "README.md": ("## Quickstart", "start a new Claude Code or Codex session"),
+            "README.zh-TW.md": ("## 快速開始", "開啟新的 Claude Code 或 Codex session"),
+        }
+        for relative, (heading, session_copy) in expected_session_copy.items():
+            with self.subTest(path=relative):
+                text = (ROOT / relative).read_text(encoding="utf-8")
+                start = text.index(heading)
+                end = text.find("\n## ", start + len(heading))
+                quickstart = text[start:] if end == -1 else text[start:end]
+                markers = (
+                    "git clone",
+                    "deep-research-state demo",
+                    "deep-research-state providers",
+                    "cp .env.example .env",
+                    'ln -s "$PWD" "$HOME/.claude/skills/deep"',
+                    session_copy,
+                    "/deep <question>",
+                )
+                positions = [quickstart.index(marker) for marker in markers]
+                self.assertEqual(positions, sorted(positions))
 
     def test_bindings_use_posture_and_tier(self) -> None:
         for relative in ("SKILL.md", "AGENTS.md", "HARNESS.md"):

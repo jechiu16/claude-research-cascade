@@ -8,6 +8,12 @@ from scripts import release_gate
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_module_docstring_discloses_dependency_audit_network_access(self) -> None:
+        self.assertEqual(
+            release_gate.__doc__,
+            "Run release-readiness checks; pip_audit may require network access.",
+        )
+
     @mock.patch("scripts.release_gate.subprocess.run")
     def test_run_raises_on_failure(self, subprocess_run: mock.Mock) -> None:
         subprocess_run.return_value = subprocess.CompletedProcess(["false"], 2)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the complete no-network release-readiness gate."""
+"""Run release-readiness checks; pip_audit may require network access."""
 
 from __future__ import annotations
 
