@@ -564,7 +564,7 @@
           "citation_count"
         ],
         "verified_at": "2026-07-12",
-        "source": "https://platform.openai.com/docs/guides/background (async Responses API job output; conservative session-only local retention, same posture as perplexity/sonar; adoption gate: not yet enabled pending a live occurrence)"
+        "source": "https://platform.openai.com/docs/guides/background (async Responses API job output; conservative session-only local retention, same posture as perplexity/sonar; adoption gate: enabled after the 2026-07-12 live adoption occurrence)"
       },
       "required_env": [
         "OPENAI_API_KEY"

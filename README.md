@@ -14,7 +14,7 @@ session with resumable multi-provider execution and a deterministic report.
 
 ## Contents
 
-[Why this exists](#why-this-exists) · [Key terms](#key-terms) · [Host compatibility](#host-compatibility) · [Quickstart](#quickstart) · [Install as a shared skill](#install-as-a-shared-skill) · [Use](#use) ·
+[Why this exists](#why-this-exists) · [Key terms](#key-terms) · [Host compatibility](#host-compatibility) · [Quickstart](#quickstart) ·
 [How it works](#how-it-works) · [Provider routes](#provider-routes) · [CLI](#cli) · [Credentials and security](#credentials-and-security) · [Development and release quality](#development-and-release-quality) · [Project map](#project-map)
 
 ## Why this exists
@@ -60,14 +60,22 @@ The research protocol is shared. Host files only map native tools to the same me
 
 ## Quickstart
 
-Run the full machine with no network, API key, or cost:
+Follow one path from a checkout to a confirmed `/deep` request:
+
+1. Clone and install one checkout:
 
 ```bash
-git clone https://github.com/jechiu16/agent-deep-research-trigger.git
-cd agent-deep-research-trigger
+git clone https://github.com/jechiu16/agent-deep-research-trigger.git \
+  "$HOME/.agent-deep-research-trigger"
+cd "$HOME/.agent-deep-research-trigger"
 
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
+```
+
+2. Optionally run the no-network health check. It needs no API key or cost:
+
+```bash
 .venv/bin/deep-research-state demo /tmp/agent-deep-demo --json
 ```
 
@@ -77,44 +85,49 @@ Expected result:
 {"validation_ok": true}
 ```
 
-The demo proves the permit → request boundary → occurrence → validation →
+The demo proves the permit -> request boundary -> occurrence -> validation ->
 report path. Its no-network route is structurally forbidden from supporting a
 real claim.
 
-## Install as a shared skill
-
-Keep one checkout and expose it to either or both hosts:
+3. Check route readiness before configuring spend:
 
 ```bash
-git clone https://github.com/jechiu16/agent-deep-research-trigger.git \
-  "$HOME/.agent-deep-research-trigger"
-cd "$HOME/.agent-deep-research-trigger"
+.venv/bin/deep-research-state providers
+```
 
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
+This deterministic human view shows `ready`, `missing-key`, `disabled`, or
+`unbound` routes without printing credentials. Use
+`.venv/bin/deep-research-state providers --json` for machine consumers.
 
-# Claude Code personal skill
-mkdir -p "$HOME/.claude/skills"
+4. Configure only intended keys:
+
+```bash
+cp .env.example .env
+# Edit .env and add only the provider keys you intend to use.
+```
+
+5. Link the same checkout into either or both hosts:
+
+```bash
+mkdir -p "$HOME/.claude/skills" "$HOME/.agents/skills"
 ln -s "$PWD" "$HOME/.claude/skills/deep"
-
-# Codex personal skill
-mkdir -p "$HOME/.agents/skills"
 ln -s "$PWD" "$HOME/.agents/skills/deep"
 ```
 
-Project-local discovery wrappers are already included under `.claude/skills`
-and `.agents/skills`. Codex also reads the root `AGENTS.md` when working in this
-repository.
+The project-local discovery wrappers are already included under `.claude/skills`
+and `.agents/skills`.
 
-## Use
+6. After linking, start a new Claude Code or Codex session so the host discovers
+the skill.
 
-Invoke the workflow explicitly:
+7. Invoke `/deep <question>`:
 
 ```text
 /deep Compare SQLite and DuckDB as the default local analytics engine.
 ```
 
-The Organizer first shows a contract card containing:
+Inspect the exact contract card, then explicitly confirm it and its binding
+hashes before spend. The card shows:
 
 - posture: `lookup`, `synthesis`, `scientific`, or `decision`;
 - tier: `low`, `medium`, `high`, or a custom request envelope;
@@ -122,7 +135,8 @@ The Organizer first shows a contract card containing:
 - reserved challenge or verification calls;
 - storage class, latency, and cost uncertainty.
 
-No research request runs until the user confirms the exact card and its binding hashes. A changed registry, route record, or card requires a new confirmation.
+No research request runs until the exact card is confirmed. A changed registry,
+route record, or card requires a new confirmation.
 
 ## How it works
 
@@ -181,34 +195,12 @@ v2-bound; a present credential is never execution readiness by itself.
 
 ## CLI
 
-```text
-providers         inspect secret-free route capabilities
-demo              one-command no-network end-to-end session (permit -> occurrence -> report.html)
-prepare           normalize and hash an unconfirmed contract
-confirm           bind the exact user-approved contract
-init              create canonical state and genesis event
-permit            reserve exact physical requests
-attempt           journal one attempt-status transition for an acquired action
-execute           run one permitted synchronous request
-deep-submit       submit one paid async job, never auto-retried
-deep-poll         perform one permitted poll
-deep-timeout      move an accepted deep action to uncertain past its contract cap (free)
-deep-pending      list harvestable async jobs without network access
-status            show canonical status and quota use
-citations         harvest deduplicated citations for verification-stage sampling (free)
-patch             apply a revision-checked Organizer update
-artifact-add      securely ingest local or fetched bytes
-promote           promote a boundary-spooled provider payload into the artifact index
-artifact-purge    purge, revalidate, and rerender
-recover           recover WAL and authorized pending operations
-validate          run structure, lineage, quota, artifact, and verdict gates
-render            atomically create the deterministic HTML report
-view              open report.html in the default browser
-```
-
-Use `.venv/bin/deep-research-state --help` for the complete interface.
-`.venv/bin/deep-research-state providers --json` gives a secret-free local
-readiness check.
+The installed `deep-research-state` entry point covers provider readiness, the
+no-network demo, contract/permit execution, state and artifact operations, and
+validation/rendering. Use `.venv/bin/deep-research-state --help` for the full
+interface. `.venv/bin/deep-research-state providers` is the human secret-free
+readiness view; `.venv/bin/deep-research-state providers --json` is for machine
+consumers.
 
 ## Credentials and security
 
@@ -231,7 +223,7 @@ For the threat model, storage rights, recovery rules, and limitations, read [HAR
 The release gate requires a clean worktree and runs:
 
 - unit tests with an 80% core branch-coverage floor;
-- Ruff static checks and golden transcript validation;
+- Ruff static checks;
 - installed-CLI end-to-end demo;
 - wheel and source distribution builds plus Twine metadata checks;
 - dependency vulnerability audit.

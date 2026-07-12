@@ -15,7 +15,30 @@ class DocumentationTests(unittest.TestCase):
 
         declared = re.search(r'^version = "([^"]+)"$', pyproject, re.MULTILINE)
         self.assertIsNotNone(declared)
+        self.assertEqual(declared.group(1), "2.0.0b5")
         self.assertEqual(declared.group(1), __version__)
+
+    def test_beta5_release_metadata_is_coherent(self) -> None:
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        registry = (ROOT / "research_harness/provider_registry.json").read_text(
+            encoding="utf-8"
+        )
+        self.assertTrue(changelog.startswith("# Changelog\n"))
+        self.assertIn("## 2.0.0b5", changelog.split("## 2.0.0b4", 1)[0])
+        self.assertNotIn("current package version is the `2.0.0b2`", changelog)
+        self.assertNotIn("not yet enabled pending a live occurrence", registry)
+
+    def test_readmes_document_one_real_first_use_path(self) -> None:
+        expected_session_copy = {
+            "README.md": "start a new Claude Code or Codex session",
+            "README.zh-TW.md": "開啟新的 Claude Code 或 Codex session",
+        }
+        for relative, session_copy in expected_session_copy.items():
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("deep-research-state providers", text)
+            self.assertIn("/deep", text)
+            self.assertIn(session_copy, text)
+            self.assertNotIn("golden transcript", text.lower())
 
     def test_bindings_use_posture_and_tier(self) -> None:
         for relative in ("SKILL.md", "AGENTS.md", "HARNESS.md"):
