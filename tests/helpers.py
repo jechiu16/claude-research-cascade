@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
+from research_harness._canon import sha256_hex
 from research_harness.contracts import contract_card_sha256, normalize_contract
 from research_harness.providers import (
     load_provider_registry,
@@ -397,6 +398,21 @@ def make_complete_pass_session(
         NOW,
     )
 
+    claim_record = {
+        "id": "C1",
+        "text": "The bounded finding applies to this decision.",
+        "scope": "fixture environment",
+        "qualifiers": [],
+        "load_bearing": True,
+        "claim_type": "source-of-record",
+        "status": "corroborated",
+        "supporting_evidence_ids": ["E1"],
+        "counter_evidence_ids": [],
+        "source_origin_ids": ["O1"],
+        "applicability": "checked",
+        "would_change_if": "the authoritative source changes",
+        "engineering_implication_ids": [],
+    }
     verification: list[dict[str, Any]] = [
         {"id": "V1", "kind": "primary_check", "completed": True, "action_id": "A3"}
     ]
@@ -422,6 +438,12 @@ def make_complete_pass_session(
                 "context_separated": True,
                 "produced_candidate": False,
                 "action_id": "O1",
+                "verifier_actor": "context-separated-verifier",
+                "candidate_actor": "candidate-organizer",
+                "packet_claim_ids": ["C1"],
+                "packet_sha256": sha256_hex([claim_record]),
+                "verdict": "accept",
+                "disposition": "accepted the bounded claim packet",
             }
         )
 
@@ -446,21 +468,7 @@ def make_complete_pass_session(
         {
             "op": "add",
             "path": "/claims/-",
-            "value": {
-                "id": "C1",
-                "text": "The bounded finding applies to this decision.",
-                "scope": "fixture environment",
-                "qualifiers": [],
-                "load_bearing": True,
-                "claim_type": "source-of-record",
-                "status": "corroborated",
-                "supporting_evidence_ids": ["E1"],
-                "counter_evidence_ids": [],
-                "source_origin_ids": ["O1"],
-                "applicability": "checked",
-                "would_change_if": "the authoritative source changes",
-                "engineering_implication_ids": [],
-            },
+            "value": claim_record,
         },
         {"op": "replace", "path": "/summary/status", "value": "PASS"},
         {
@@ -472,6 +480,34 @@ def make_complete_pass_session(
             "op": "replace",
             "path": "/summary/load_bearing_claim_ids",
             "value": ["C1"],
+        },
+        {"op": "replace", "path": "/summary/human_status", "value": "completed"},
+        {
+            "op": "replace",
+            "path": "/summary/human_recommendation",
+            "value": "Use the bounded recommendation.",
+        },
+        {
+            "op": "replace",
+            "path": "/engineering_handoff/constraints",
+            "value": ["Re-evaluate if the authoritative source changes."],
+        },
+        {
+            "op": "replace",
+            "path": "/engineering_handoff/safe_actions",
+            "value": [
+                {
+                    "id": "SA1" if safe_action else "SA-CANON",
+                    "description": "Run a reversible spike",
+                    "reversible": True,
+                    "depends_on_claim_ids": [],
+                }
+            ],
+        },
+        {
+            "op": "replace",
+            "path": "/engineering_handoff/acceptance_tests",
+            "value": ["rerun validation => package remains valid"],
         },
     ]
     operations.extend(
@@ -488,19 +524,6 @@ def make_complete_pass_session(
                     "claim_ids": ["C1"],
                     "adversarially_reviewed": True,
                     "weakest_joint": True,
-                },
-            }
-        )
-    if safe_action:
-        operations.append(
-            {
-                "op": "add",
-                "path": "/engineering_handoff/safe_actions/-",
-                "value": {
-                    "id": "SA1",
-                    "description": "Run a reversible spike",
-                    "reversible": True,
-                    "depends_on_claim_ids": [],
                 },
             }
         )
@@ -540,15 +563,15 @@ def make_partial_session(root: Path, safe_action: bool) -> Path:
 
     session = make_complete_pass_session(root, "medium", "lookup", safe_action=safe_action)
     state = load_state(session)
-    apply_state_patch(
-        session,
-        [
-            {"op": "replace", "path": "/summary/status", "value": "PARTIAL"},
-            {"op": "replace", "path": "/claims/0/status", "value": "unverified"},
-        ],
-        state["session"]["revision"],
-        NOW,
-    )
+    operations = [
+        {"op": "replace", "path": "/summary/status", "value": "PARTIAL"},
+        {"op": "replace", "path": "/claims/0/status", "value": "unverified"},
+    ]
+    if not safe_action:
+        operations.append(
+            {"op": "replace", "path": "/engineering_handoff/safe_actions", "value": []}
+        )
+    apply_state_patch(session, operations, state["session"]["revision"], NOW)
     return session
 
 

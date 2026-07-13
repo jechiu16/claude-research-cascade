@@ -5,9 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from research_harness._canon import sha256_hex
 from research_harness.artifacts import ArtifactPolicyError, ingest_host_capture
 from research_harness.contracts import contract_card_sha256
-from research_harness.rendering import render_session_result
+from research_harness.rendering import finalize_session_result, render_session_result
 from research_harness.state import new_state
 from research_harness.storage import apply_state_patch, create_session, load_state, read_events
 from research_harness.validation import validate_session
@@ -44,7 +45,24 @@ class HostTierContractTests(unittest.TestCase):
             purpose,
         )
 
-    def _link_claim(self, evidence: list[dict]) -> None:
+    def _verifier_record(
+        self, claims: list[dict], *, record_id: str = "V-HIGH"
+    ) -> dict:
+        return {
+            "id": record_id,
+            "kind": "verifier",
+            "completed": True,
+            "context_separated": True,
+            "produced_candidate": False,
+            "verifier_actor": "host-verifier",
+            "candidate_actor": "candidate-organizer",
+            "packet_claim_ids": [claim["id"] for claim in claims],
+            "packet_sha256": sha256_hex(claims),
+            "verdict": "accept",
+            "disposition": "accepted the bounded claim packet",
+        }
+
+    def _link_claim(self, evidence: list[dict], *, include_verifier: bool = True) -> None:
         state = load_state(self.session)
         operations: list[dict] = []
         for item in evidence:
@@ -86,24 +104,26 @@ class HostTierContractTests(unittest.TestCase):
                     },
                 }
             )
+        claim_record = {
+            "id": "C1",
+            "text": "Captured finding applies to this bounded decision.",
+            "would_change_if": "the captured source changes",
+            "load_bearing": True,
+            "supporting_evidence_ids": [item["id"] for item in evidence],
+        }
         operations.extend(
             [
                 {
                     "op": "add",
                     "path": "/claims/-",
-                    "value": {
-                        "id": "C1",
-                        "text": "Captured finding applies to this bounded decision.",
-                        "would_change_if": "the captured source changes",
-                        "load_bearing": True,
-                        "supporting_evidence_ids": [item["id"] for item in evidence],
-                    },
+                    "value": claim_record,
                 },
                 {
                     "op": "replace",
                     "path": "/summary/load_bearing_claim_ids",
                     "value": ["C1"],
                 },
+                {"op": "replace", "path": "/summary/status", "value": "PARTIAL"},
                 {"op": "replace", "path": "/summary/human_status", "value": "已完成研究判斷"},
                 {"op": "replace", "path": "/summary/human_recommendation", "value": "建議採用"},
                 {"op": "replace", "path": "/summary/decision", "value": "採用此有界結論"},
@@ -117,8 +137,21 @@ class HostTierContractTests(unittest.TestCase):
                     "path": "/engineering_handoff/safe_actions",
                     "value": [{"id": "A1", "description": "保留可逆試行", "reversible": True, "depends_on_claim_ids": []}],
                 },
+                {
+                    "op": "replace",
+                    "path": "/engineering_handoff/acceptance_tests",
+                    "value": ["rerun validation => tier contract remains met"],
+                },
             ]
         )
+        if state["contract"]["tier"] == "high" and include_verifier:
+            operations.append(
+                {
+                    "op": "add",
+                    "path": "/verification/-",
+                    "value": self._verifier_record([claim_record]),
+                }
+            )
         apply_state_patch(self.session, operations, state["session"]["revision"], NOW)
 
     def test_host_capture_preserves_bytes_lineage_and_creates_no_transactions(self) -> None:
@@ -259,11 +292,17 @@ class HostTierContractTests(unittest.TestCase):
     def test_each_human_completeness_gap_is_warning_only_and_insufficient(self) -> None:
         missing_fields = (
             ("/summary/human_status", ""),
+            ("/summary/human_status", "證據不足"),
+            ("/summary/human_status", "EVIDENCE_INSUFFICIENT"),
+            ("/summary/human_status", "交付不完整"),
+            ("/summary/human_status", "DELIVERY_INCOMPLETE"),
             ("/summary/human_recommendation", ""),
             ("/summary/decision", ""),
             ("/claims/0/text", ""),
             ("/engineering_handoff/constraints", []),
             ("/engineering_handoff/safe_actions", []),
+            ("/engineering_handoff/acceptance_tests", []),
+            ("/engineering_handoff/acceptance_tests", ["x"]),
         )
         for index, (path, value) in enumerate(missing_fields):
             with self.subTest(path=path):
@@ -281,13 +320,19 @@ class HostTierContractTests(unittest.TestCase):
                             {"op": "replace", "path": "/claims/0/would_change_if", "value": ""},
                         ]
                     )
+                if path == "/engineering_handoff/safe_actions":
+                    operations.append(
+                        {"op": "replace", "path": "/summary/status", "value": "BLOCKED"}
+                    )
                 apply_state_patch(self.session, operations, state["session"]["revision"], NOW)
                 report = validate_session(self.session)
                 self.assertFalse(report.tier_contract_met, report.to_dict())
                 self.assertFalse(report.errors, report.to_dict())
                 first_screen = render_session_result(self.session).path.read_text(encoding="utf-8").split('<details class="kernel-details">', 1)[0]
-                self.assertIn("尚缺足夠的直接來源，結論可能改變", first_screen)
-                self.assertIn("補上一個可直接查核的來源後再評估", first_screen)
+                self.assertEqual(report.human_status, "交付不完整")
+                self.assertIn("BLOCKED / DELIVERY_INCOMPLETE", first_screen + render_session_result(self.session).path.read_text(encoding="utf-8"))
+                self.assertIn("補齊交付要件後重新產生報告", first_screen)
+                self.assertNotIn("尚缺足夠的直接來源，結論可能改變", first_screen)
 
     def test_complete_host_package_has_deliverable_human_surface(self) -> None:
         artifact = self._capture("HC1", "https://example.test/source", b"direct finding")
@@ -361,6 +406,248 @@ class HostTierContractTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertTrue(payload["integrity_ok"])
         self.assertEqual(payload["human_status"], "證據不足")
+
+    def test_in_progress_is_delivery_incomplete_and_finalizer_seals_matching_status(self) -> None:
+        artifact = self._capture("HC1", "https://example.test/source", b"direct finding")
+        self._link_claim(
+            [{"id": "E1", "artifact_id": artifact["id"], "source_url": "https://example.test/source", "canonical_source_key": "https://example.test/source", "payload": b"direct finding"}]
+        )
+        state = load_state(self.session)
+        apply_state_patch(
+            self.session,
+            [{"op": "replace", "path": "/summary/status", "value": "IN_PROGRESS"}],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        report = validate_session(self.session)
+        self.assertFalse(report.tier_contract_met, report.to_dict())
+        self.assertEqual(report.human_status, "交付不完整")
+        self.assertIn("tier.terminal_status_missing", {issue.code for issue in report.warnings})
+
+        rendered = finalize_session_result(self.session, NOW)
+        sealed = load_state(self.session)
+        self.assertEqual(sealed["summary"]["status"], "BLOCKED")
+        self.assertEqual(sealed["summary"]["human_status"], "交付不完整")
+        self.assertFalse(rendered.validation.tier_contract_met)
+        self.assertIn(
+            "BLOCKED / DELIVERY_INCOMPLETE", rendered.path.read_text(encoding="utf-8")
+        )
+
+    def test_invalid_acceptance_grammar_is_delivery_incomplete(self) -> None:
+        artifact = self._capture("HC1", "https://example.test/source", b"direct finding")
+        self._link_claim(
+            [{"id": "E1", "artifact_id": artifact["id"], "source_url": "https://example.test/source", "canonical_source_key": "https://example.test/source", "payload": b"direct finding"}]
+        )
+        for value in ("x", " -> expected", "check -> ", " => expected", "check => "):
+            with self.subTest(value=value):
+                state = load_state(self.session)
+                apply_state_patch(
+                    self.session,
+                    [
+                        {
+                            "op": "replace",
+                            "path": "/engineering_handoff/acceptance_tests",
+                            "value": [value],
+                        }
+                    ],
+                    state["session"]["revision"],
+                    NOW,
+                )
+
+                report = validate_session(self.session)
+                self.assertFalse(report.tier_contract_met, report.to_dict())
+                self.assertEqual(report.human_status, "交付不完整")
+                self.assertIn(
+                    "tier.acceptance_tests_missing",
+                    {issue.code for issue in report.warnings},
+                )
+
+    def test_any_acceptance_test_with_nonempty_check_and_expected_is_sufficient(self) -> None:
+        artifact = self._capture("HC1", "https://example.test/source", b"direct finding")
+        self._link_claim(
+            [{"id": "E1", "artifact_id": artifact["id"], "source_url": "https://example.test/source", "canonical_source_key": "https://example.test/source", "payload": b"direct finding"}]
+        )
+        for value in (" check => expected ", "command -> 65 passed"):
+            with self.subTest(value=value):
+                state = load_state(self.session)
+                apply_state_patch(
+                    self.session,
+                    [
+                        {
+                            "op": "replace",
+                            "path": "/engineering_handoff/acceptance_tests",
+                            "value": ["x", value],
+                        }
+                    ],
+                    state["session"]["revision"],
+                    NOW,
+                )
+
+                report = validate_session(self.session)
+                self.assertTrue(report.tier_contract_met, report.to_dict())
+                self.assertNotIn(
+                    "tier.acceptance_tests_missing", {issue.code for issue in report.issues}
+                )
+
+    def test_high_verifier_minimum_is_required_without_host_accounting(self) -> None:
+        self.session = self._make_session("high", axes=True, label="verifier")
+        first = self._capture("HC1", "https://example.test/a", b"finding A")
+        second = self._capture("HC2", "https://example.test/b", b"finding B")
+        evidence = [
+            {"id": "E1", "artifact_id": first["id"], "source_url": "https://example.test/a", "canonical_source_key": "https://example.test/a", "payload": b"finding A"},
+            {"id": "E2", "artifact_id": second["id"], "source_url": "https://example.test/b", "canonical_source_key": "https://example.test/b", "payload": b"finding B"},
+        ]
+        self._link_claim(evidence, include_verifier=False)
+
+        missing = validate_session(self.session)
+        self.assertFalse(missing.tier_contract_met, missing.to_dict())
+        self.assertEqual(missing.human_status, "交付不完整")
+        self.assertIn("tier.high_verifier_missing", {issue.code for issue in missing.warnings})
+        self.assertNotIn("host.accounting", {issue.code for issue in missing.issues})
+
+        state = load_state(self.session)
+        apply_state_patch(
+            self.session,
+            [
+                {
+                    "op": "add",
+                    "path": "/verification/-",
+                    "value": self._verifier_record(state["claims"]),
+                }
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+        complete = validate_session(self.session)
+        self.assertTrue(complete.tier_contract_met, complete.to_dict())
+
+    def test_high_verifier_attestation_rejects_forged_or_mismatched_fields(self) -> None:
+        cases = {
+            "flags-only": {
+                "id": "V-HIGH",
+                "kind": "verifier",
+                "completed": True,
+                "context_separated": True,
+                "produced_candidate": False,
+            },
+            "missing-actor": {"verifier_actor": ""},
+            "same-actor": {
+                "verifier_actor": "candidate-organizer",
+                "candidate_actor": "candidate-organizer",
+            },
+            "claim-ids": {"packet_claim_ids": ["C2"]},
+            "packet-hash": {"packet_sha256": "0" * 64},
+            "verdict": {"verdict": "approve"},
+            "disposition": {"disposition": ""},
+        }
+        for label, changes in cases.items():
+            with self.subTest(label=label):
+                self.session = self._make_session("high", axes=True, label=label)
+                first = self._capture("HC1", "https://example.test/a", b"finding A")
+                second = self._capture("HC2", "https://example.test/b", b"finding B")
+                self._link_claim(
+                    [
+                        {"id": "E1", "artifact_id": first["id"], "source_url": "https://example.test/a", "canonical_source_key": "https://example.test/a", "payload": b"finding A"},
+                        {"id": "E2", "artifact_id": second["id"], "source_url": "https://example.test/b", "canonical_source_key": "https://example.test/b", "payload": b"finding B"},
+                    ],
+                    include_verifier=False,
+                )
+                state = load_state(self.session)
+                record = self._verifier_record(state["claims"])
+                if label == "flags-only":
+                    record = changes
+                else:
+                    record.update(changes)
+                apply_state_patch(
+                    self.session,
+                    [{"op": "add", "path": "/verification/-", "value": record}],
+                    state["session"]["revision"],
+                    NOW,
+                )
+
+                report = validate_session(self.session)
+                self.assertFalse(report.tier_contract_met, report.to_dict())
+                self.assertIn(
+                    "tier.high_verifier_invalid", {issue.code for issue in report.warnings}
+                )
+
+    def test_high_verifier_packet_hash_changes_with_claim_record(self) -> None:
+        self.session = self._make_session("high", axes=True, label="packet-mutation")
+        first = self._capture("HC1", "https://example.test/a", b"finding A")
+        second = self._capture("HC2", "https://example.test/b", b"finding B")
+        self._link_claim(
+            [
+                {"id": "E1", "artifact_id": first["id"], "source_url": "https://example.test/a", "canonical_source_key": "https://example.test/a", "payload": b"finding A"},
+                {"id": "E2", "artifact_id": second["id"], "source_url": "https://example.test/b", "canonical_source_key": "https://example.test/b", "payload": b"finding B"},
+            ]
+        )
+        self.assertTrue(validate_session(self.session).tier_contract_met)
+        state = load_state(self.session)
+        apply_state_patch(
+            self.session,
+            [{"op": "replace", "path": "/claims/0/text", "value": "mutated claim"}],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        report = validate_session(self.session)
+        self.assertFalse(report.tier_contract_met, report.to_dict())
+        self.assertIn("tier.high_verifier_invalid", {issue.code for issue in report.warnings})
+
+    def test_high_pass_does_not_exempt_verifier_existence(self) -> None:
+        self.session = self._make_session("high", axes=True, label="pass-verifier")
+        first = self._capture("HC1", "https://example.test/a", b"finding A")
+        second = self._capture("HC2", "https://example.test/b", b"finding B")
+        self._link_claim(
+            [
+                {"id": "E1", "artifact_id": first["id"], "source_url": "https://example.test/a", "canonical_source_key": "https://example.test/a", "payload": b"finding A"},
+                {"id": "E2", "artifact_id": second["id"], "source_url": "https://example.test/b", "canonical_source_key": "https://example.test/b", "payload": b"finding B"},
+            ],
+            include_verifier=False,
+        )
+        state = load_state(self.session)
+        apply_state_patch(
+            self.session,
+            [{"op": "replace", "path": "/summary/status", "value": "PASS"}],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        report = validate_session(self.session)
+        self.assertIn("tier.high_verifier_missing", {issue.code for issue in report.errors})
+        self.assertEqual(
+            sum(issue.code == "tier.high_verifier_missing" for issue in report.issues), 1
+        )
+        self.assertNotIn("host.accounting", {issue.code for issue in report.issues})
+
+    def test_finalizer_seals_semantically_invalid_pass_even_when_tier_floor_is_met(self) -> None:
+        artifact = self._capture("HC1", "https://example.test/source", b"direct finding")
+        self._link_claim(
+            [{"id": "E1", "artifact_id": artifact["id"], "source_url": "https://example.test/source", "canonical_source_key": "https://example.test/source", "payload": b"direct finding"}]
+        )
+        state = load_state(self.session)
+        apply_state_patch(
+            self.session,
+            [{"op": "replace", "path": "/summary/status", "value": "PASS"}],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        before = validate_session(self.session)
+        self.assertTrue(before.integrity_ok, before.to_dict())
+        self.assertTrue(before.tier_contract_met, before.to_dict())
+        self.assertFalse(before.ok, before.to_dict())
+        self.assertTrue(before.errors, before.to_dict())
+
+        rendered = finalize_session_result(self.session, NOW)
+        sealed = load_state(self.session)
+        self.assertEqual(sealed["summary"]["status"], "BLOCKED")
+        self.assertEqual(sealed["summary"]["human_status"], "交付不完整")
+        self.assertFalse(rendered.validation.tier_contract_met)
+        self.assertIn(
+            "BLOCKED / DELIVERY_INCOMPLETE", rendered.path.read_text(encoding="utf-8")
+        )
 
     def test_host_capture_lineage_cannot_be_added_by_generic_organizer_patch(self) -> None:
         from research_harness.storage import ProtectedStatePath

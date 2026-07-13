@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import purge_raw_artifact, recover_pending_purges
-from .rendering import RenderedReport, render_session_result
+from .rendering import RenderedReport, finalize_session_result
 from .storage import recover_session
 
 
@@ -35,7 +35,7 @@ def purge_artifact(
         safe_action_ids,
         now,
     )
-    rendered = render_session_result(Path(session_dir))
+    rendered = finalize_session_result(Path(session_dir), now)
     return {"tombstone": tombstone, **_rendered_payload(rendered)}
 
 
@@ -43,7 +43,7 @@ def recover_operation(session_dir: Path, now: str) -> dict[str, Any]:
     session_dir = Path(session_dir)
     storage_recovery = recover_session(session_dir)
     purges = recover_pending_purges(session_dir, now)
-    rendered = render_session_result(session_dir)
+    rendered = finalize_session_result(session_dir, now)
     return {
         "storage_recovery": storage_recovery,
         "recovered_purges": purges,

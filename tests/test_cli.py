@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import io
 import json
 import os
 import subprocess
@@ -23,6 +25,7 @@ from research_harness.providers import (
 from research_harness.rendering import render_session_result
 from research_harness.state import new_state, state_sha256
 from research_harness.storage import apply_state_patch, create_session, load_state, read_events
+from research_harness.validation import validate_session
 from scripts import research_state
 from tests.helpers import (
     NOW,
@@ -115,10 +118,16 @@ class CliTests(unittest.TestCase):
             NOW,
             "--json",
         )
-        validated = self.run_cli("validate", str(self.session), "--json")
+        validated = self.run_cli("validate", str(self.session), "--json", check=False)
         rendered = self.run_cli("render", str(self.session), "--json")
-        self.assertTrue(json.loads(validated.stdout)["ok"])
-        self.assertTrue(Path(json.loads(rendered.stdout)["report_path"]).exists())
+        self.assertEqual(validated.returncode, 2, validated.stderr)
+        self.assertFalse(json.loads(validated.stdout)["tier_contract_met"])
+        report_path = Path(json.loads(rendered.stdout)["report_path"])
+        self.assertTrue(report_path.exists())
+        state = load_state(self.session)
+        self.assertEqual(state["summary"]["status"], "BLOCKED")
+        self.assertEqual(state["summary"]["human_status"], "交付不完整")
+        self.assertIn("BLOCKED / DELIVERY_INCOMPLETE", report_path.read_text(encoding="utf-8"))
 
     def test_v2_example_init_smoke_creates_session_and_validates(self) -> None:
         session = self.root / "v2-example-session"
@@ -128,9 +137,23 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(initialized.returncode, 0, initialized.stderr)
         self.assertTrue((session / "state.json").exists())
+
         validated = self.run_cli("validate", str(session), "--json", check=False)
-        self.assertEqual(validated.returncode, 0, validated.stderr)
-        self.assertTrue(json.loads(validated.stdout)["ok"])
+        self.assertEqual(validated.returncode, 2, validated.stderr)
+        validation = json.loads(validated.stdout)
+        self.assertTrue(validation["integrity_ok"], validation)
+        self.assertFalse(validation["tier_contract_met"], validation)
+
+        rendered = self.run_cli("render", str(session), "--json", check=False)
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        report_path = Path(json.loads(rendered.stdout)["report_path"])
+        state = load_state(session)
+        self.assertEqual(state["summary"]["status"], "BLOCKED")
+        self.assertEqual(state["summary"]["human_status"], "證據不足")
+        self.assertIn(
+            "BLOCKED / EVIDENCE_INSUFFICIENT",
+            report_path.read_text(encoding="utf-8"),
+        )
 
     def test_demo_and_adapter_guide_use_current_user_path(self) -> None:
         demo_session = self.root / "demo-session"
@@ -217,6 +240,280 @@ class CliTests(unittest.TestCase):
             NOW,
         )
         self.assertEqual(self.run_cli("validate", str(invalid), "--json", check=False).returncode, 1)
+
+    def test_host_capture_cli_preserves_exact_bytes_and_lineage(self) -> None:
+        contract = confirmed_medium_contract()
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        contract_path = self._write_json(contract, "host-contract.json")
+        session = self.root / "host-session"
+        self.run_cli(
+            "init", str(session), "--contract", str(contract_path), "--now", NOW, "--json"
+        )
+
+        payload = b"\x00host-rendered\xff\n"
+        payload_path = self.root / "capture.bin"
+        payload_path.write_bytes(payload)
+        result = self.run_cli(
+            "host-capture",
+            str(session),
+            "--payload",
+            str(payload_path),
+            "--artifact-id",
+            "HC1",
+            "--source-url",
+            "https://example.test/source",
+            "--source-title",
+            "Captured source",
+            "--upstream-key",
+            "https://example.test/upstream",
+            "--fidelity",
+            "host_rendered",
+            "--marginal-purpose",
+            "resolve the named gap",
+            "--now",
+            NOW,
+            "--json",
+        )
+
+        artifact = json.loads(result.stdout)["artifact"]
+        self.assertEqual((session / artifact["relative_path"]).read_bytes(), payload)
+        self.assertEqual(artifact["provenance"]["origin_kind"], "host_capture")
+        self.assertEqual(artifact["host_capture"]["source_url"], "https://example.test/source")
+        self.assertEqual(
+            artifact["host_capture"]["canonical_source_key"], "https://example.test/source"
+        )
+        self.assertEqual(artifact["host_capture"]["upstream_key"], "https://example.test/upstream")
+        self.assertEqual(artifact["host_capture"]["fidelity"], "host_rendered")
+        self.assertEqual(artifact["host_capture"]["captured_at"], NOW)
+        self.assertEqual(artifact["host_capture"]["marginal_purpose"], "resolve the named gap")
+
+    def test_host_medium_cli_flow_delivers_valid_terminal_package(self) -> None:
+        contract = confirmed_medium_contract()
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        contract_path = self._write_json(contract, "host-flow-contract.json")
+        session = self.root / "host-flow-session"
+        self.run_cli(
+            "init", str(session), "--contract", str(contract_path), "--now", NOW, "--json"
+        )
+
+        source_bytes = b"direct CLI finding"
+        payload_path = self.root / "host-flow-capture.bin"
+        payload_path.write_bytes(source_bytes)
+        captured = self.run_cli(
+            "host-capture",
+            str(session),
+            "--payload",
+            str(payload_path),
+            "--artifact-id",
+            "HC1",
+            "--source-url",
+            "https://example.test/source",
+            "--source-title",
+            "Captured source",
+            "--upstream-key",
+            "upstream-1",
+            "--fidelity",
+            "host_rendered",
+            "--marginal-purpose",
+            "resolve the named gap",
+            "--now",
+            NOW,
+            "--json",
+        )
+        artifact = json.loads(captured.stdout)["artifact"]
+        patch_path = self._write_json(
+            {
+                "operations": [
+                    {"op": "add", "path": "/source_origins/-", "value": {"id": "O1", "kind": "host"}},
+                    {
+                        "op": "add",
+                        "path": "/sources/-",
+                        "value": {
+                            "id": "S1",
+                            "origin_id": "O1",
+                            "url": "https://example.test/source",
+                            "title": "Captured source",
+                            "canonical_source_key": "https://example.test/source",
+                            "upstream_key": "upstream-1",
+                            "direct_fetch": True,
+                        },
+                    },
+                    {
+                        "op": "add",
+                        "path": "/evidence/-",
+                        "value": {
+                            "id": "E1",
+                            "artifact_id": artifact["id"],
+                            "source_id": "S1",
+                            "origin_id": "O1",
+                            "excerpt_start": 0,
+                            "excerpt_end": len(source_bytes),
+                            "excerpt": source_bytes.decode("utf-8"),
+                        },
+                    },
+                    {
+                        "op": "add",
+                        "path": "/claims/-",
+                        "value": {
+                            "id": "C1",
+                            "text": "Captured finding applies to this bounded decision.",
+                            "would_change_if": "the captured source changes",
+                            "load_bearing": True,
+                            "supporting_evidence_ids": ["E1"],
+                        },
+                    },
+                    {"op": "replace", "path": "/summary/load_bearing_claim_ids", "value": ["C1"]},
+                    {"op": "replace", "path": "/summary/status", "value": "PARTIAL"},
+                    {"op": "replace", "path": "/summary/human_status", "value": "已完成研究判斷"},
+                    {"op": "replace", "path": "/summary/human_recommendation", "value": "建議採用"},
+                    {"op": "replace", "path": "/summary/decision", "value": "採用此有界結論"},
+                    {
+                        "op": "replace",
+                        "path": "/engineering_handoff/constraints",
+                        "value": ["若來源改變則重新評估"],
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/engineering_handoff/safe_actions",
+                        "value": [{"id": "A1", "description": "保留可逆試行", "reversible": True, "depends_on_claim_ids": []}],
+                    },
+                    {
+                        "op": "replace",
+                        "path": "/engineering_handoff/acceptance_tests",
+                        "value": ["rerun validation => tier contract remains met"],
+                    },
+                ]
+            },
+            "host-flow-patch.json",
+        )
+        self.run_cli("patch", str(session), "--patch", str(patch_path), "--now", NOW, "--json")
+
+        validated = self.run_cli("validate", str(session), "--json")
+        validation = json.loads(validated.stdout)
+        self.assertTrue(validation["ok"], validation)
+        self.assertTrue(validation["tier_contract_met"], validation)
+        rendered = self.run_cli("render", str(session), "--now", NOW, "--json")
+        render_payload = json.loads(rendered.stdout)
+        self.assertTrue(render_payload["validation"]["ok"], render_payload)
+        report_path = Path(render_payload["report_path"])
+        self.assertTrue(report_path.exists())
+        final_state = load_state(session)
+        self.assertEqual(final_state["summary"]["status"], "PARTIAL")
+        self.assertIn(
+            "rerun validation => tier contract remains met",
+            final_state["engineering_handoff"]["acceptance_tests"],
+        )
+        self.assertEqual((session / artifact["relative_path"]).read_bytes(), source_bytes)
+
+    def test_render_cli_seals_insufficient_tier_status(self) -> None:
+        contract = confirmed_medium_contract()
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        contract_path = self._write_json(contract, "host-render-contract.json")
+        session = self.root / "host-render-session"
+        self.run_cli(
+            "init", str(session), "--contract", str(contract_path), "--now", NOW, "--json"
+        )
+
+        before = load_state(session)
+        rendered = self.run_cli("render", str(session), "--now", NOW, "--json")
+
+        state = load_state(session)
+        self.assertEqual(state["summary"]["status"], "BLOCKED")
+        self.assertEqual(state["summary"]["human_status"], "證據不足")
+        self.assertEqual(state["session"]["revision"], before["session"]["revision"] + 1)
+        payload = json.loads(rendered.stdout)
+        self.assertFalse(payload["validation"]["tier_contract_met"])
+        self.assertTrue(payload["validation"]["integrity_ok"])
+
+        rerendered = self.run_cli("render", str(session), "--now", NOW, "--json")
+        rerendered_state = load_state(session)
+        self.assertEqual(
+            rerendered_state["session"]["revision"], state["session"]["revision"]
+        )
+        self.assertEqual(
+            json.loads(rerendered.stdout)["validation"]["tier_contract_met"], False
+        )
+
+    def test_render_help_describes_final_delivery_seal(self) -> None:
+        result = self.run_cli("render", "--help")
+
+        help_text = result.stdout.lower()
+        self.assertIn("final delivery", help_text)
+        self.assertIn("revision-safe", help_text)
+        self.assertIn("tier floor", help_text)
+        self.assertIn("summary.status=blocked", help_text)
+
+    def test_public_view_and_render_script_finalize_current_report_consistently(self) -> None:
+        def make_host_session(name: str) -> Path:
+            contract = confirmed_medium_contract()
+            contract["execution"] = "host_native"
+            contract["durability"] = "canonical_package"
+            contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+            session = self.root / name
+            create_session(session, new_state(contract, NOW, None, {}))
+            return session
+
+        view_session = make_host_session("view-final-session")
+        stale_report = render_session_result(view_session).path
+        stale_bytes = stale_report.read_bytes()
+        state = load_state(view_session)
+        apply_state_patch(
+            view_session,
+            [{"op": "replace", "path": "/summary/decision", "value": "new decision"}],
+            state["session"]["revision"],
+            LATER,
+        )
+        output = io.StringIO()
+        with mock.patch.object(research_state.webbrowser, "open", return_value=True) as opened:
+            with mock.patch.object(sys, "stdout", output):
+                code = research_state.main(
+                    ["view", str(view_session), "--now", LATER, "--json"]
+                )
+
+        self.assertEqual(code, 0, output.getvalue())
+        view_payload = json.loads(output.getvalue())
+        self.assertTrue(view_payload["opened"])
+        opened.assert_called_once_with(stale_report.resolve().as_uri())
+        self.assertNotEqual(stale_report.read_bytes(), stale_bytes)
+        view_state = load_state(view_session)
+        self.assertEqual(view_state["summary"]["status"], "BLOCKED")
+        self.assertEqual(view_state["summary"]["human_status"], "證據不足")
+        self.assertEqual(view_state["session"]["updated_at"], LATER)
+        self.assertNotIn(
+            "report.stale", {issue.code for issue in validate_session(view_session).errors}
+        )
+
+        script_session = make_host_session("script-final-session")
+        script = self.repo / "scripts" / "render_report.py"
+        result = subprocess.run(
+            [sys.executable, str(script), str(script_session), "--now", LATER, "--json"],
+            cwd=self.repo,
+            text=True,
+            capture_output=True,
+            env=os.environ.copy(),
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        script_payload = json.loads(result.stdout)
+        script_state = load_state(script_session)
+        self.assertEqual(script_state["summary"]["status"], "BLOCKED")
+        self.assertEqual(script_state["summary"]["human_status"], "證據不足")
+        self.assertEqual(script_state["session"]["updated_at"], LATER)
+        self.assertEqual(
+            script_payload["validation"]["human_status"],
+            validate_session(view_session).human_status,
+        )
+        for report in (stale_report, Path(script_payload["report_path"])):
+            self.assertIn(
+                "BLOCKED / EVIDENCE_INSUFFICIENT",
+                report.read_text(encoding="utf-8"),
+            )
 
     def test_attempt_records_status_transitions_for_organizer_action(self) -> None:
         self._init_session()
@@ -982,6 +1279,66 @@ class CliTests(unittest.TestCase):
         result = purge_artifact(session, "A1", "retention expired", "BLOCKED", (), NOW)
         self.assertEqual(load_state(session)["summary"]["status"], "BLOCKED")
         self.assertTrue(Path(result["report_path"]).exists())
+
+    def test_public_purge_seals_delivery_shortfall_in_state_and_html(self) -> None:
+        session = make_complete_pass_session(self.root, "high", "decision")
+        state = load_state(session)
+        verifier_index = next(
+            index
+            for index, item in enumerate(state["verification"])
+            if item.get("kind") == "verifier"
+        )
+        apply_state_patch(
+            session,
+            [
+                {
+                    "op": "replace",
+                    "path": f"/verification/{verifier_index}/action_id",
+                    "value": "MISSING-ORGANIZER-ACTION",
+                }
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        result = purge_artifact(session, "A1", "retention expired", "BLOCKED", (), NOW)
+        state = load_state(session)
+        report = Path(result["report_path"]).read_text(encoding="utf-8")
+
+        self.assertEqual(state["summary"]["status"], "BLOCKED")
+        self.assertEqual(state["summary"]["human_status"], "交付不完整")
+        self.assertEqual(result["state_sha256"], state_sha256(state))
+        self.assertIn("BLOCKED / DELIVERY_INCOMPLETE", report)
+        self.assertIn(state_sha256(state), report)
+        self.assertEqual(result["validation"]["human_status"], "交付不完整")
+
+    def test_public_recover_seals_delivery_shortfall_in_state_and_html(self) -> None:
+        session = make_complete_pass_session(self.root, "medium", "lookup")
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [{"op": "replace", "path": "/engineering_handoff/acceptance_tests", "value": []}],
+            state["session"]["revision"],
+            NOW,
+        )
+        with mock.patch(
+            "research_harness.artifacts._finalize_purge_tombstone", side_effect=OSError("crash")
+        ):
+            with self.assertRaises(OSError):
+                purge_raw_artifact(session, "A1", "retention expired", "BLOCKED", (), NOW)
+
+        result = recover_operation(session, LATER)
+        state = load_state(session)
+        report = Path(result["report_path"]).read_text(encoding="utf-8")
+
+        self.assertEqual(state["summary"]["status"], "BLOCKED")
+        self.assertEqual(state["summary"]["human_status"], "交付不完整")
+        self.assertEqual(state["session"]["updated_at"], LATER)
+        self.assertEqual(result["state_sha256"], state_sha256(state))
+        self.assertEqual(result["report_sha256"], hashlib.sha256(report.encode()).hexdigest())
+        self.assertIn("BLOCKED / DELIVERY_INCOMPLETE", report)
+        self.assertIn(state_sha256(state), report)
+        self.assertEqual(result["validation"]["human_status"], "交付不完整")
 
     def test_public_recover_completes_pending_purge_validates_and_renders(self) -> None:
         session = make_complete_pass_session(self.root, "medium", "lookup")

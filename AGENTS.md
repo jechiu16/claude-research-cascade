@@ -10,5 +10,6 @@ copy or redefine its tier or posture semantics here. Use the canonical skill
 for confirm, validate, and render, and preserve its Traditional Chinese
 human-facing fields, exact evidence excerpts, and source titles.
 
-The optional `HARNESS.md` document is maintainer reference material, not a
-second protocol or a prerequisite for running `/deep`.
+`HARNESS.md` is not a second public protocol. Low does not read it; after the
+user selects Medium or High, it is the required internal runtime bridge for the
+host.

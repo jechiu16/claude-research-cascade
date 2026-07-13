@@ -10,14 +10,21 @@ from typing import Any
 
 from .state import state_sha256
 from .storage import (
+    ORGANIZER_ROOTS,
     _append_event_unlocked,
     _atomic_write_bytes_unlocked,
+    _commit_patch_unlocked,
     _load_state_unlocked,
     _read_events_unlocked,
     _recover_session_unlocked,
     session_lock,
 )
-from .validation import ValidationReport, _renderable_human_reasons, _validate_loaded_session
+from .validation import (
+    ValidationReport,
+    _renderable_human_reasons,
+    _validate_loaded_session,
+    tier_shortfall_labels,
+)
 
 
 @dataclass(frozen=True)
@@ -249,16 +256,30 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
     summary = state.get("summary", {})
     contract = state.get("contract", {})
     status = summary.get("status", "未記錄狀態")
+    organizer_recommendation = (
+        report.human_recommendation or summary.get("human_recommendation") or "尚未記錄建議"
+    )
+    shortfall_human_status, shortfall_technical_status = tier_shortfall_labels(report.issues)
     display_status = str(status) if valid else f"{status} / INVALID"
-    status_class = "pass" if valid and status == "PASS" else "invalid" if not valid else "partial"
-    recommendation = report.human_recommendation or summary.get("human_recommendation") or "尚未記錄建議"
+    if valid and not report.tier_contract_met:
+        display_status = f"BLOCKED / {shortfall_technical_status}"
+    status_class = (
+        "invalid"
+        if not valid
+        else "blocked"
+        if not report.tier_contract_met
+        else "pass"
+        if status == "PASS"
+        else "partial"
+    )
+    recommendation = organizer_recommendation
     human_status = report.human_status or summary.get("human_status") or "尚未記錄研究判斷"
     if not valid:
         human_status = "驗證未通過"
         recommendation = "驗證未通過，暫不作建議"
     elif not report.tier_contract_met:
-        human_status = "證據不足"
-        recommendation = "證據不足，暫不作肯定建議"
+        human_status = shortfall_human_status
+        recommendation = f"{shortfall_human_status}，暫不作肯定建議"
     ceilings = contract.get("resource_envelope", {}).get("physical_ceiling", {})
     quota_rows = "".join(
         f'<tr><td>{_escape(category)}</td><td>{_escape(count)}</td></tr>'
@@ -292,18 +313,24 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
       <p class="decision-text">{_escape(failure_summary)}</p>
       <h3>安全下一步</h3><p>修正驗證問題後重新產生報告</p></section>'''
     else:
-        fallback_action = (
-            '<article class="safe-action"><h3>補上一個可直接查核的來源後再評估</h3>'
-            '<p>可逆：是</p></article>'
-            if not report.tier_contract_met
-            else first_safe_action_html
-        )
+        if report.tier_contract_met:
+            fallback_action = first_safe_action_html
+        elif shortfall_technical_status == "EVIDENCE_INSUFFICIENT":
+            fallback_action = (
+                '<article class="safe-action"><h3>補上一個可直接查核的來源後再評估</h3>'
+                '<p>可逆：是</p></article>'
+            )
+        else:
+            fallback_action = (
+                '<article class="safe-action"><h3>補齊交付要件後重新產生報告</h3>'
+                '<p>可逆：是</p></article>'
+            )
         human_first_html = f'''<section class="human-first"><div class="eyebrow">研究建議</div><h2>{_escape(recommendation)}</h2>
       <p><strong>研究狀態:</strong> {_escape(human_status)}</p>
       <div class="decision"><div class="eyebrow">有界結論</div><h3>結論</h3>
       <p class="decision-text">{_escape(summary.get("decision", "尚未記錄結論"))}</p>
       </div><h3>核心理由</h3>{_render_human_reasons(state)}
-      <h3>限制與翻轉條件</h3>{_human_limitations(state, not report.tier_contract_met)}
+      <h3>限制與翻轉條件</h3>{_human_limitations(state, shortfall_technical_status == "EVIDENCE_INSUFFICIENT" and not report.tier_contract_met)}
       <h3>下一步</h3>{fallback_action}</section>'''
 
     return f"""<!doctype html>
@@ -332,7 +359,7 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
     .status-line {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:22px; }}
     .verdict {{ border:2px solid currentColor; padding:6px 11px; font-weight:800; letter-spacing:.08em; }}
     .verdict.pass {{ color:var(--forest); }} .verdict.invalid {{ color:var(--bad); }}
-    .verdict.partial {{ color:#78530c; }}
+    .verdict.partial {{ color:#78530c; }} .verdict.blocked {{ color:var(--bad); }}
     .hash {{ color:var(--muted); word-break:break-all; font:12px/1.4 Menlo,Consolas,monospace; }}
     main {{ padding:24px 0 80px; display:grid; gap:18px; }}
     section {{ background:color-mix(in srgb,var(--panel) 94%,transparent); border:1px solid var(--line);
@@ -401,7 +428,7 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
     <section><h2>決定性檢查結果</h2>
       <p><strong>integrity_ok:</strong> {_boolean_label(report.integrity_ok)}</p>
       <p><strong>tier_contract_met:</strong> {_boolean_label(report.tier_contract_met)}</p>
-      <p><strong>human_recommendation:</strong> {_escape(recommendation)}</p>
+      <p><strong>human_recommendation:</strong> {_escape(organizer_recommendation)}</p>
       {_render_validation(report)}</section>
     <p class="hash">state sha256 {canonical_hash}</p></details>
     <footer>本報告只從唯一正式 JSON 狀態決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。</footer>
@@ -409,6 +436,28 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
 </body>
 </html>
 """
+
+
+def _render_loaded_session_unlocked(
+    session_dir: Path,
+    state: dict[str, Any],
+    validation: ValidationReport,
+) -> RenderedReport:
+    state_hash = state_sha256(state)
+    payload = render_html(state, validation).encode("utf-8")
+    report_hash = hashlib.sha256(payload).hexdigest()
+    report_path = session_dir / "report.html"
+    _atomic_write_bytes_unlocked(report_path, payload)
+    _append_event_unlocked(
+        session_dir,
+        {
+            "event": "report_generated",
+            "at": state["session"]["updated_at"],
+            "state_sha256": state_hash,
+            "report_sha256": report_hash,
+        },
+    )
+    return RenderedReport(report_path, validation, state_hash, report_hash)
 
 
 def render_session_result(session_dir: Path) -> RenderedReport:
@@ -420,18 +469,46 @@ def render_session_result(session_dir: Path) -> RenderedReport:
         validation = _validate_loaded_session(
             session_dir, state, events, event_errors, check_report=False
         )
-        state_hash = state_sha256(state)
-        payload = render_html(state, validation).encode("utf-8")
-        report_hash = hashlib.sha256(payload).hexdigest()
-        report_path = session_dir / "report.html"
-        _atomic_write_bytes_unlocked(report_path, payload)
-        _append_event_unlocked(
-            session_dir,
-            {
-                "event": "report_generated",
-                "at": state["session"]["updated_at"],
-                "state_sha256": state_hash,
-                "report_sha256": report_hash,
-            },
+        return _render_loaded_session_unlocked(session_dir, state, validation)
+
+
+def finalize_session_result(session_dir: Path, now: str) -> RenderedReport:
+    """Seal a sound-but-undeliverable status and render it under one session lock."""
+
+    session_dir = Path(session_dir)
+    with session_lock(session_dir):
+        _recover_session_unlocked(session_dir)
+        state = _load_state_unlocked(session_dir)
+        events, event_errors = _read_events_unlocked(session_dir)
+        validation = _validate_loaded_session(
+            session_dir, state, events, event_errors, check_report=False
         )
-        return RenderedReport(report_path, validation, state_hash, report_hash)
+        if validation.integrity_ok and not validation.ok:
+            seal_human_status, _ = tier_shortfall_labels(validation.issues)
+            operations = []
+            if state["summary"].get("status") != "BLOCKED":
+                operations.append(
+                    {"op": "replace", "path": "/summary/status", "value": "BLOCKED"}
+                )
+            if state["summary"].get("human_status") != seal_human_status:
+                operations.append(
+                    {
+                        "op": "replace",
+                        "path": "/summary/human_status",
+                        "value": seal_human_status,
+                    }
+                )
+            if operations:
+                state = _commit_patch_unlocked(
+                    session_dir,
+                    operations,
+                    state["session"]["revision"],
+                    now,
+                    ORGANIZER_ROOTS,
+                    "organizer",
+                )
+                events, event_errors = _read_events_unlocked(session_dir)
+                validation = _validate_loaded_session(
+                    session_dir, state, events, event_errors, check_report=False
+                )
+        return _render_loaded_session_unlocked(session_dir, state, validation)

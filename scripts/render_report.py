@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import sys
 from pathlib import Path
@@ -13,16 +14,23 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from research_harness.rendering import render_session_result
+from research_harness.rendering import finalize_session_result
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Render deterministic /deep v2 HTML")
+    parser = argparse.ArgumentParser(
+        description="Finalize and render deterministic /deep v2 HTML"
+    )
     parser.add_argument("session")
+    parser.add_argument("--now", help="timestamp for a canonical tier-status seal")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     try:
-        rendered = render_session_result(Path(args.session))
+        rendered = finalize_session_result(Path(args.session), args.now or _now())
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -1,6 +1,8 @@
 # V2 Runtime Example
 
-`medium-contract.json` is a deterministic, no-paid-provider foundation fixture. It authorizes:
+`medium-contract.json` is an intentional evidence-shortfall fixture: `init`
+succeeds, `validate` exits `2`, and `render` still delivers a blocked package.
+It authorizes:
 
 - one host-native primary scout request;
 - one local applicability action;
@@ -9,18 +11,22 @@
 - one Organizer final review pass;
 - zero external provider, processor, experiment, or transport requests.
 
-The confirmation hashes bind this exact card to the committed provider registry. Use it for smoke tests only. For a real session, run `prepare`, show the returned card and three hashes to the user, and call `confirm` only after the user explicitly chooses it.
+Fixture confirmation hashes only bind the smoke-test contract. A real `/deep` session follows the canonical `SKILL.md` seven-line card; after the user chooses a tier, the internal bridge handles binding without showing hashes or requiring a second confirmation.
 
 ```bash
-PY=/Users/jechiu/dev/parallax/.venv/bin/python
+set -e
+ROOT="$(pwd)"
+CLI="$ROOT/.venv/bin/deep-research-state"
 SESSION="$(mktemp -d)/session"
 
-"$PY" scripts/research_state.py init "$SESSION" \
-  --contract examples/v2/medium-contract.json \
+"$CLI" init "$SESSION" \
+  --contract "$ROOT/examples/v2/medium-contract.json" \
   --json
 
-"$PY" scripts/research_state.py validate "$SESSION" --json
-"$PY" scripts/research_state.py render "$SESSION" --json
+VALIDATE_EXIT=0
+"$CLI" validate "$SESSION" --json || VALIDATE_EXIT=$?
+test "$VALIDATE_EXIT" -eq 2
+"$CLI" render "$SESSION" --json
 ```
 
 The CLI records permits and state transitions; it does not itself perform host-native WebSearch. External providers remain disabled until their adapters use the common v2 request boundary and pass adoption gates.

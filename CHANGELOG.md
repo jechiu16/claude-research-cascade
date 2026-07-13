@@ -3,6 +3,23 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning once the v2 runtime leaves development status.
 
+## 2.0.0b6
+
+### Changed
+
+- The first `/deep` response is a seven-line, tool-free trigger card; Low stays
+  runtime-free, while Medium and High use the repo-local `host-capture` bridge
+  only after tier selection.
+- The public READMEs now present a compact four-step product path: clone the
+  `v2.0.0b6` tag, prepare the runtime, link one host, and invoke `/deep`.
+- Medium/High delivery is documented as `init -> host-capture -> patch as
+  needed -> validate -> render`. Evidence shortfall uses human reason `證據不足`
+  and HTML label `EVIDENCE_INSUFFICIENT`; terminal or handoff incompleteness uses
+  human reason `交付不完整` and HTML label `DELIVERY_INCOMPLETE`.
+- Medium/High terminal and handoff gates now explicitly cover both execution
+  modes. High verifier guidance binds the canonical claim packet and separates
+  host-only records from external-managed organizer-pass accounting.
+
 ## 2.0.0b5
 
 ### Added

@@ -1,14 +1,13 @@
 # Agent Deep Research Trigger — V2 Organizer Harness
 
-> Optional reference only: implementation and recovery reference only.
-> `SKILL.md` is the sole default
-> and human protocol. `AGENTS.md` is a thin binding to it; this optional
-> reference is not required to start or run `/deep`. It records canonical state, recovery, and
-> deterministic gate detail for maintainers and implementers.
+> `SKILL.md` is the sole default and human protocol. This file is the
+> Medium/High runtime bridge and implementation/recovery reference; it is read
+> only after the user selects Medium or High.
 
 This is a host-neutral implementation reference. Claude Code and Codex use the
 sole protocol in [SKILL.md](SKILL.md); [AGENTS.md](AGENTS.md) only provides the
-thin host binding. The design rationale lives under `docs/superpowers/specs/`.
+thin host binding. Low never reads or invokes this runtime. The design rationale
+lives under `docs/superpowers/specs/`.
 
 ## Purpose
 
@@ -41,7 +40,7 @@ A present credential is not execution readiness. No disabled route may be exerci
 
 ## Public Protocol
 
-`SKILL.md` is the sole public protocol. This optional reference records the
+`SKILL.md` is the sole public protocol. This internal reference records the
 implementation and recovery boundary; it does not define another user flow.
 
 1. The user types the literal `/deep`.
@@ -50,6 +49,57 @@ implementation and recovery boundary; it does not define another user flow.
 4. `Adjust` revises the scope and shows a new card; it does not start research.
 5. The tier choice is the only confirmation for that run.
 
+## Runtime Bridge
+
+After Medium or High selection, the host reads this `HARNESS.md` beside the
+canonical `SKILL.md` and uses the repo-local CLI. `ROOT` is the absolute
+directory containing that canonical `SKILL.md`; `CLI` is always:
+
+```bash
+ROOT="/absolute/path/to/the/canonical-skill"
+CLI="$ROOT/.venv/bin/deep-research-state"
+SESSION="/absolute/path/to/this-run-package"
+```
+
+Every bridge command below works from any current working directory and uses
+`$CLI`:
+
+```bash
+"$CLI" init "$SESSION" --contract "/absolute/path/to/confirmed-contract.json" --json
+"$CLI" host-capture "$SESSION" --payload "/absolute/path/to/capture-file" \
+  --artifact-id HC1 --source-url '<url>' --source-title '<title>' \
+  --upstream-key '<upstream>' --fidelity host_rendered \
+  --marginal-purpose '<named marginal purpose>' --json
+"$CLI" patch "$SESSION" --patch "/absolute/path/to/state-patch.json" --json
+"$CLI" validate "$SESSION" --json
+"$CLI" render "$SESSION" --json
+```
+
+The host may patch canonical state between `host-capture` and `validate` when
+needed. The bridge flow is therefore `init -> host-capture -> patch as needed
+-> validate -> render`. A patch must at minimum link source/evidence/claim and
+fill summary decision/terminal status plus engineering_handoff
+constraints/safe_actions/acceptance_tests. Each acceptance-test string MUST use
+`檢查方式 => 預期結果`, with non-empty text on both sides; this adds no schema.
+Set status before `validate` for PASS; the final package must not retain
+`IN_PROGRESS`.
+
+The Medium/High canonical terminal, handoff, and completeness gates apply
+equally to `host_native` and `external_managed` execution.
+
+Fail closed with the matching reason: an evidence-floor gap sets canonical
+`summary.status=BLOCKED`, `summary.human_status=證據不足`, and
+`tier_contract_met=false`, with HTML `BLOCKED / EVIDENCE_INSUFFICIENT`; a
+terminal/handoff/completeness gap sets canonical `summary.status=BLOCKED` and
+`summary.human_status=交付不完整`, with HTML `BLOCKED / DELIVERY_INCOMPLETE`.
+
+`host-capture` proves persisted exact bytes and internal consistency of
+caller/host-attested metadata only. It does not prove that the payload came
+from the declared URL or is a host observation.
+
+Do not use `command -v`, a global CLI, or a user-facing bridge step. Low stops
+before this section.
+
 ## Internal Binding
 
 After tier selection, the Organizer internally derives and binds the canonical
@@ -57,6 +107,10 @@ contract. It may use `prepare`, `confirm`, and `init` as implementation details,
 not as user steps or another confirmation. An external paid-request count or
 local-data egress semantic change requires a new card and a new run, as defined
 by `SKILL.md`.
+
+`execution` is the Organizer/host home execution mode; `host_native` does not
+exclude an optional external provider route already confirmed on the card.
+Every repo-sent call still requires its stage-map entry and request boundary.
 
 ## Scientific Organizer Loop
 
@@ -90,7 +144,7 @@ Boundary-managed requests build the actual request and reserve their exact
 budget inside the execute command:
 
 ```bash
-"$PY" scripts/research_state.py execute <session-dir> \
+"$CLI" execute "$SESSION" \
   --action-id A1 --stage primary_scout --route openalex \
   --query '<question>' --now '<timestamp>' --json
 ```
@@ -99,11 +153,11 @@ Paid async requests use the same boundary-owned choreography; do not run a
 separate paid `permit` command or provide a fingerprint:
 
 ```bash
-"$PY" scripts/research_state.py deep-submit <session-dir> \
+"$CLI" deep-submit "$SESSION" \
   --action-id D1 --stage investigation --route perplexity \
   --query '<question>' --now '<timestamp>' --json
 
-"$PY" scripts/research_state.py deep-poll <session-dir> \
+"$CLI" deep-poll "$SESSION" \
   --action-id D1 --poll-action-id T1 \
   --stage investigation --route perplexity \
   --now '<timestamp>' --json
@@ -139,7 +193,7 @@ Medium/High scientific or decision runs perform:
 - **coverage audit:** inspect omitted premises, boundary conditions, and candidate omissions;
 - **local applicability:** test project versions, environment, and constraints when feasible.
 
-High additionally requires a verifier with fresh context that receives the exact claim or argument packet, did not produce the candidate, and records `context_separated=true` and `produced_candidate=false`. When the verifier's organizer-pass action finishes, journal it with the `attempt` command (`attempted` -> `accepted` -> `completed`); `validate` only credits a verifier whose action reached `completed`.
+High MUST include a fresh, context-separated analyst pass over the exact claim packet. Its canonical verifier record minimally contains `verifier_actor != candidate_actor`, `packet_claim_ids`, a recomputable `packet_sha256`, `verdict` in `accept/revise/block`, `disposition`, `completed=true`, `context_separated=true`, and `produced_candidate=false`. This is host attestation plus canonical packet binding; it proves neither context nor source independence. A `host_native` verifier writes only the completed verifier record, with no permit or attempt event. An `external_managed` verifier additionally requires the existing completed organizer-pass action.
 
 ### 7. Terminate Honestly
 
@@ -182,8 +236,8 @@ Purge is a semantic transition: downgrade affected claims and verdict first, per
 Run:
 
 ```bash
-"$PY" scripts/research_state.py validate <session-dir> --json
-"$PY" scripts/research_state.py render <session-dir> --json
+"$CLI" validate "$SESSION" --json
+"$CLI" render "$SESSION" --json
 ```
 
 Never upgrade a verdict because HTML looks complete. Rendering an invalid state labels it `INVALID`.
@@ -203,9 +257,9 @@ The final chat and canonical state should make the next coding session cheaper. 
 ## Recovery Commands
 
 ```bash
-"$PY" scripts/research_state.py status <session-dir> --json
-"$PY" scripts/research_state.py recover <session-dir> --json
-"$PY" scripts/research_state.py artifact-purge <session-dir> \
+"$CLI" status "$SESSION" --json
+"$CLI" recover "$SESSION" --json
+"$CLI" artifact-purge "$SESSION" \
   --artifact-id A1 --reason "retention expired" \
   --requested-status BLOCKED --json
 ```

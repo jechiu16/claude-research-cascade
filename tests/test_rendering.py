@@ -3,15 +3,29 @@ from __future__ import annotations
 import copy
 import hashlib
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from research_harness.rendering import render_html, render_session_result
-from research_harness.state import state_sha256
-from research_harness.storage import apply_state_patch, load_state, read_events
-from research_harness.validation import validate_session
-from research_harness.validation import ValidationReport
-from tests.helpers import NOW, make_complete_pass_session
+import research_harness.rendering as rendering
+from research_harness.artifacts import ingest_host_capture
+from research_harness.contracts import contract_card_sha256
+from research_harness.rendering import (
+    finalize_session_result,
+    render_html,
+    render_session_result,
+)
+from research_harness.state import new_state, state_sha256
+from research_harness.storage import (
+    RevisionConflict,
+    apply_state_patch,
+    create_session,
+    load_state,
+    read_events,
+)
+from research_harness.validation import Issue, ValidationReport, validate_session
+from tests.helpers import NOW, confirmed_contract, make_complete_pass_session
 
 
 class RenderingTests(unittest.TestCase):
@@ -214,6 +228,18 @@ class RenderingTests(unittest.TestCase):
         self.assertFalse(result.validation.ok)
         self.assertIn("INVALID", result.path.read_text(encoding="utf-8"))
 
+    def test_finalizer_keeps_canonical_state_unchanged_on_integrity_error(self) -> None:
+        before = load_state(self.session)
+        path = self.session / before["artifact_index"][0]["relative_path"]
+        path.write_bytes(b"tampered")
+
+        result = finalize_session_result(self.session, NOW)
+
+        after = load_state(self.session)
+        self.assertEqual(after, before)
+        self.assertFalse(result.validation.integrity_ok)
+        self.assertIn("INVALID", result.path.read_text(encoding="utf-8"))
+
     def test_non_integrity_error_still_renders_fail_closed(self) -> None:
         session = make_complete_pass_session(self.root)
         state = load_state(session)
@@ -261,7 +287,21 @@ class RenderingTests(unittest.TestCase):
                 "upstream_key": "unknown",
             }
         )
-        report = ValidationReport((), state_sha256(state), True, False, "建議採用", "")
+        report = ValidationReport(
+            (
+                Issue(
+                    "WARNING",
+                    "tier.capture_missing",
+                    "host capture is missing",
+                    "/artifact_index",
+                ),
+            ),
+            state_sha256(state),
+            True,
+            False,
+            "建議採用",
+            "",
+        )
         document = render_html(state, report)
         first_screen = document.split('<details class="kernel-details">', 1)[0]
 
@@ -271,6 +311,220 @@ class RenderingTests(unittest.TestCase):
         self.assertIn("補上一個可直接查核的來源後再評估", first_screen)
         self.assertIn("證據不足", first_screen)
         self.assertNotIn("完整性檢查", first_screen)
+
+    def test_direct_renderer_uses_effective_blocked_status_for_tier_shortfall(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["summary"]["status"] = "PASS"
+        state["summary"]["human_recommendation"] = "Organizer recommendation"
+        report = ValidationReport(
+            (
+                Issue(
+                    "WARNING",
+                    "tier.capture_missing",
+                    "host capture is missing",
+                    "/artifact_index",
+                ),
+            ),
+            state_sha256(state),
+            True,
+            False,
+            "Organizer recommendation",
+            "證據不足",
+        )
+
+        document = render_html(state, report)
+
+        self.assertIn("BLOCKED / EVIDENCE_INSUFFICIENT", document)
+        self.assertIn("<strong>integrity_ok:</strong> 是", document)
+        self.assertIn("<strong>tier_contract_met:</strong> 否", document)
+        self.assertIn(
+            "<strong>human_recommendation:</strong> Organizer recommendation", document
+        )
+
+    def test_direct_renderer_projects_delivery_incomplete_without_mutating_state(self) -> None:
+        state = copy.deepcopy(self.state)
+        before = copy.deepcopy(state)
+        report = ValidationReport(
+            (
+                Issue(
+                    "WARNING",
+                    "tier.acceptance_tests_missing",
+                    "acceptance test is missing",
+                    "/engineering_handoff/acceptance_tests",
+                ),
+            ),
+            state_sha256(state),
+            True,
+            False,
+            "Organizer recommendation",
+            "交付不完整",
+        )
+
+        document = render_html(state, report)
+
+        self.assertEqual(state, before)
+        self.assertIn("BLOCKED / DELIVERY_INCOMPLETE", document)
+        self.assertIn("交付不完整", document)
+        self.assertNotIn("尚缺足夠的直接來源，結論可能改變", document)
+
+    def test_direct_render_does_not_seal_delivery_shortfall(self) -> None:
+        contract = confirmed_contract("medium")
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        session = self.root / "host-seal-counterexample"
+        create_session(session, new_state(contract, NOW, None, {}))
+        artifact = ingest_host_capture(
+            session,
+            "HC1",
+            "https://example.test/source",
+            "Captured source",
+            "upstream-1",
+            b"direct finding",
+            "raw_http",
+            NOW,
+            "resolve the named gap",
+        )
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {"op": "add", "path": "/source_origins/-", "value": {"id": "O1", "kind": "host"}},
+                {
+                    "op": "add",
+                    "path": "/sources/-",
+                    "value": {
+                        "id": "S1",
+                        "origin_id": "O1",
+                        "url": "https://example.test/source",
+                        "title": "Captured source",
+                        "canonical_source_key": "https://example.test/source",
+                        "upstream_key": "upstream-1",
+                        "direct_fetch": True,
+                    },
+                },
+                {
+                    "op": "add",
+                    "path": "/evidence/-",
+                    "value": {
+                        "id": "E1",
+                        "artifact_id": artifact["id"],
+                        "source_id": "S1",
+                        "origin_id": "O1",
+                        "excerpt_start": 0,
+                        "excerpt_end": len(b"direct finding"),
+                        "excerpt": "direct finding",
+                    },
+                },
+                {
+                    "op": "add",
+                    "path": "/claims/-",
+                    "value": {
+                        "id": "C1",
+                        "text": "Captured finding applies to this bounded decision.",
+                        "would_change_if": "the captured source changes",
+                        "load_bearing": True,
+                        "supporting_evidence_ids": ["E1"],
+                    },
+                },
+                {"op": "replace", "path": "/summary/load_bearing_claim_ids", "value": ["C1"]},
+                {"op": "replace", "path": "/summary/human_recommendation", "value": "建議採用"},
+                {"op": "replace", "path": "/summary/decision", "value": "採用此有界結論"},
+                {
+                    "op": "replace",
+                    "path": "/engineering_handoff/constraints",
+                    "value": ["若來源改變則重新評估"],
+                },
+                {
+                    "op": "replace",
+                    "path": "/engineering_handoff/safe_actions",
+                    "value": [{"id": "A1", "description": "保留可逆試行", "reversible": True, "depends_on_claim_ids": []}],
+                },
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        before = load_state(session)
+        rendered = render_session_result(session)
+        sealed = load_state(session)
+        self.assertEqual(sealed["summary"]["status"], before["summary"]["status"])
+        self.assertEqual(sealed["summary"]["human_status"], "")
+        self.assertEqual(sealed["session"]["revision"], before["session"]["revision"])
+        self.assertFalse(rendered.validation.tier_contract_met)
+        self.assertIn(
+            "BLOCKED / DELIVERY_INCOMPLETE", rendered.path.read_text(encoding="utf-8")
+        )
+
+    def test_finalizer_blocks_concurrent_patch_until_report_event(self) -> None:
+        contract = confirmed_contract("medium")
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        session = self.root / "finalizer-concurrency"
+        create_session(session, new_state(contract, NOW, None, {}))
+        initial = load_state(session)
+        ready = threading.Event()
+        release = threading.Event()
+        patch_started = threading.Event()
+        patch_done = threading.Event()
+        finalizer_result: dict[str, object] = {}
+        finalizer_error: list[BaseException] = []
+        patch_error: list[BaseException] = []
+        original_render = rendering._render_loaded_session_unlocked
+
+        def gated_render(*args: object, **kwargs: object):
+            ready.set()
+            if not release.wait(2):
+                raise AssertionError("finalizer render gate was not released")
+            return original_render(*args, **kwargs)
+
+        def run_finalizer() -> None:
+            try:
+                finalizer_result["rendered"] = finalize_session_result(session, NOW)
+            except BaseException as exc:  # surfaced below in the main test thread
+                finalizer_error.append(exc)
+
+        def run_concurrent_patch() -> None:
+            patch_started.set()
+            try:
+                apply_state_patch(
+                    session,
+                    [{"op": "replace", "path": "/summary/decision", "value": "concurrent patch"}],
+                    initial["session"]["revision"],
+                    NOW,
+                )
+            except BaseException as exc:  # surfaced below in the main test thread
+                patch_error.append(exc)
+            finally:
+                patch_done.set()
+
+        with mock.patch.object(rendering, "_render_loaded_session_unlocked", gated_render):
+            finalizer_thread = threading.Thread(target=run_finalizer)
+            finalizer_thread.start()
+            self.assertTrue(ready.wait(2))
+            patch_thread = threading.Thread(target=run_concurrent_patch)
+            patch_thread.start()
+            self.assertTrue(patch_started.wait(2))
+            self.assertFalse(patch_done.wait(0.1))
+            release.set()
+            finalizer_thread.join(2)
+            patch_thread.join(2)
+
+        self.assertFalse(finalizer_thread.is_alive())
+        self.assertFalse(patch_thread.is_alive())
+        self.assertEqual(finalizer_error, [])
+        self.assertEqual(len(patch_error), 1)
+        self.assertIsInstance(patch_error[0], RevisionConflict)
+        rendered = finalizer_result["rendered"]
+        events, errors = read_events(session)
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            [event["event"] for event in events],
+            ["session_created", "state_revision", "report_generated"],
+        )
+        self.assertEqual(rendered.state_sha256, state_sha256(load_state(session)))
+        self.assertNotIn("report.stale", {issue.code for issue in validate_session(session).errors})
 
     def test_human_reasons_use_at_most_three_validated_sources_and_disclose_upstream(self) -> None:
         state = copy.deepcopy(self.state)

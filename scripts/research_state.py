@@ -22,6 +22,7 @@ _DEPRECATED_QUESTION_PRESENT = object()
 
 from research_harness.artifacts import (
     ingest_fetched_source,
+    ingest_host_capture,
     ingest_local_artifact,
     promote_provider_payload,
 )
@@ -46,7 +47,7 @@ from research_harness.providers import (
     referenced_provider_records,
 )
 from research_harness.quota import _record_attempt_status_unlocked, acquire_permits, permit_usage
-from research_harness.rendering import render_session_result
+from research_harness.rendering import finalize_session_result, render_session_result
 from research_harness.state import new_state, state_sha256
 from research_harness.storage import (
     _read_events_unlocked,
@@ -660,6 +661,24 @@ def command_artifact_add(args: argparse.Namespace) -> tuple[dict[str, Any], int]
     return {"artifact": artifact}, 0
 
 
+def command_host_capture(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    """Ingest exact bytes captured by the host tool into a canonical session."""
+
+    payload = Path(args.payload).read_bytes()
+    artifact = ingest_host_capture(
+        Path(args.session),
+        args.artifact_id,
+        args.source_url,
+        args.source_title,
+        args.upstream_key,
+        payload,
+        args.fidelity,
+        args.now or _now(),
+        args.marginal_purpose,
+    )
+    return {"artifact": artifact}, 0
+
+
 def command_promote(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     artifact = promote_provider_payload(
         Path(args.session),
@@ -694,7 +713,7 @@ def command_validate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 
 def command_render(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
-    rendered = render_session_result(Path(args.session))
+    rendered = finalize_session_result(Path(args.session), args.now or _now())
     return {
         "report_path": str(rendered.path.resolve()),
         "state_sha256": rendered.state_sha256,
@@ -704,9 +723,7 @@ def command_render(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 
 def command_view(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
-    report = Path(args.session) / "report.html"
-    if not report.exists():
-        report = render_session_result(Path(args.session)).path
+    report = finalize_session_result(Path(args.session), args.now or _now()).path
     opened = webbrowser.open(report.resolve().as_uri())
     return {"report_path": str(report.resolve()), "opened": bool(opened)}, 0
 
@@ -946,13 +963,54 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_flag(validate)
     validate.set_defaults(handler=command_validate)
 
-    render = subparsers.add_parser("render", help="render deterministic report.html")
+    render = subparsers.add_parser(
+        "render",
+        help="final delivery: render report with a revision-safe BLOCKED seal when needed",
+        description=(
+            "Final delivery path. Deterministically validate the session, then when the tier "
+            "floor is unmet but integrity is sound, revision-safely seal "
+            "summary.status=BLOCKED before rendering report.html."
+        ),
+    )
     render.add_argument("session")
+    render.add_argument("--now", help="timestamp for a canonical tier-status seal")
     _add_json_flag(render)
     render.set_defaults(handler=command_render)
 
-    view = subparsers.add_parser("view", help="open report.html in the default browser")
+    host_capture = subparsers.add_parser(
+        "host-capture",
+        help="ingest exact bytes captured by the host into a host-native canonical session",
+        description=(
+            "Record one host observation without rewriting its bytes. The payload file is "
+            "copied byte-for-byte and its source lineage is stored in the artifact metadata."
+        ),
+    )
+    host_capture.add_argument("session", help="existing host-native canonical session directory")
+    host_capture.add_argument(
+        "--payload", required=True,
+        help="path to the host-captured payload file; bytes are read unchanged",
+    )
+    host_capture.add_argument("--artifact-id", required=True, help="stable artifact identifier")
+    host_capture.add_argument("--source-url", required=True, help="canonical observed source URL")
+    host_capture.add_argument("--source-title", required=True, help="title displayed for the observed source")
+    host_capture.add_argument("--upstream-key", required=True, help="upstream identity for diversity accounting")
+    host_capture.add_argument(
+        "--fidelity", required=True, choices=("raw_http", "host_rendered"),
+        help="whether the bytes are raw HTTP or host-rendered output",
+    )
+    host_capture.add_argument(
+        "--marginal-purpose", required=True,
+        help="the named evidence gap this capture is intended to resolve",
+    )
+    host_capture.add_argument("--now", help="capture timestamp; defaults to current UTC")
+    _add_json_flag(host_capture)
+    host_capture.set_defaults(handler=command_host_capture)
+
+    view = subparsers.add_parser(
+        "view", help="finalize and open the current report.html in the default browser"
+    )
     view.add_argument("session")
+    view.add_argument("--now", help="timestamp for a canonical tier-status seal")
     _add_json_flag(view)
     view.set_defaults(handler=command_view)
     return parser

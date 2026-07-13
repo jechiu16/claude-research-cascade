@@ -8,7 +8,7 @@ import re
 import stat
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ._canon import RETENTION_RANK, canonical_source_key, indexed, sha256_hex
 from .artifacts import MEDIA_EXTENSIONS, SCANNER_VERSION
@@ -27,6 +27,37 @@ from .storage import (
 
 PASSING_CLAIM_STATUSES = frozenset({"corroborated"})
 VALID_DELIVERY_STATUSES = frozenset({"IN_PROGRESS", "PASS", "PARTIAL", "BLOCKED"})
+TERMINAL_DELIVERY_STATUSES = frozenset({"PASS", "PARTIAL", "BLOCKED"})
+EVIDENCE_SHORTFALL_CODES = frozenset(
+    {
+        "tier.capture_missing",
+        "tier.load_bearing_claims_missing",
+        "tier.medium_direct_capture_missing",
+        "tier.high_capture_diversity",
+    }
+)
+DELIVERY_SHORTFALL_CODES = frozenset(
+    {
+        "tier.terminal_status_missing",
+        "tier.human_status_missing",
+        "tier.human_recommendation_missing",
+        "tier.decision_missing",
+        "tier.human_reason_missing",
+        "tier.human_limitation_missing",
+        "tier.human_safe_action_missing",
+        "tier.acceptance_tests_missing",
+        "tier.high_verifier_missing",
+        "tier.high_verifier_invalid",
+        "tier.anti_lock_in_missing",
+        "tier.coverage_audit_missing",
+        "posture.decision_joint_missing",
+    }
+)
+HUMAN_STATUS_SENTINELS = frozenset(
+    {"證據不足", "EVIDENCE_INSUFFICIENT", "交付不完整", "DELIVERY_INCOMPLETE"}
+)
+DELIVERY_HUMAN_STATUS_SENTINELS = frozenset({"交付不完整", "DELIVERY_INCOMPLETE"})
+HIGH_VERIFIER_VERDICTS = frozenset({"accept", "revise", "block"})
 REPORT_HASH_RE = re.compile(r'data-state-sha256=["\']([0-9a-f]{64})["\']')
 
 
@@ -36,6 +67,17 @@ class Issue:
     code: str
     message: str
     path: str
+
+
+def tier_shortfall_labels(issues: Iterable[Issue]) -> tuple[str, str]:
+    """Map deterministic tier issue codes to human and technical delivery labels."""
+
+    codes = {issue.code for issue in issues}
+    if codes.intersection(EVIDENCE_SHORTFALL_CODES):
+        return "證據不足", "EVIDENCE_INSUFFICIENT"
+    if codes.intersection(DELIVERY_SHORTFALL_CODES):
+        return "交付不完整", "DELIVERY_INCOMPLETE"
+    return "交付不完整", "DELIVERY_INCOMPLETE"
 
 
 @dataclass(frozen=True)
@@ -81,6 +123,17 @@ def _add(
     level: str = "ERROR",
 ) -> None:
     issues.append(Issue(level=level, code=code, message=message, path=path))
+
+
+def _add_once(
+    issues: list[Issue],
+    code: str,
+    message: str,
+    path: str,
+    level: str = "ERROR",
+) -> None:
+    if not any(issue.code == code and issue.path == path for issue in issues):
+        _add(issues, code, message, path, level)
 
 
 def _validate_event_lineage(
@@ -850,7 +903,6 @@ def _host_capture_tier_contract(
         return key, digest, upstream
 
     if not isinstance(load_ids, list) or not load_ids:
-        _add(issues, "tier.load_bearing_claims_missing", "host package requires a load-bearing claim set", "/summary")
         return False
 
     per_claim: dict[str, list[tuple[str, str, str]]] = {}
@@ -874,7 +926,7 @@ def _host_capture_tier_contract(
                 "WARNING",
             )
             return False
-        return not (host_permits or host_attempts) and _host_human_completeness(state, issues)
+        return not (host_permits or host_attempts)
     if tier != "high":
         return True
 
@@ -893,7 +945,7 @@ def _host_capture_tier_contract(
             "WARNING",
         )
         return False
-    return not (host_permits or host_attempts) and _host_human_completeness(state, issues)
+    return not (host_permits or host_attempts)
 
 
 def _renderable_human_reasons(
@@ -936,32 +988,44 @@ def _renderable_human_reasons(
     return renderable
 
 
-def _host_human_completeness(
+def _canonical_handoff_completeness(
     state: dict[str, Any],
     issues: list[Issue],
 ) -> bool:
     summary = state.get("summary", {})
     missing = False
 
-    def required_text(field: str, code: str, message: str) -> None:
+    def required_text(
+        field: str, code: str, message: str, reject_human_status_sentinel: bool = False
+    ) -> None:
         nonlocal missing
-        if not isinstance(summary.get(field), str) or not summary[field].strip():
+        value = summary.get(field)
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or (reject_human_status_sentinel and value.strip() in HUMAN_STATUS_SENTINELS)
+        ):
             _add(issues, code, message, f"/summary/{field}", "WARNING")
             missing = True
 
-    required_text("human_status", "tier.human_status_missing", "host package requires an explicit human status")
+    required_text(
+        "human_status",
+        "tier.human_status_missing",
+        "canonical package requires an explicit human status",
+        reject_human_status_sentinel=True,
+    )
     required_text(
         "human_recommendation",
         "tier.human_recommendation_missing",
-        "host package requires an explicit human recommendation",
+        "canonical package requires an explicit human recommendation",
     )
-    required_text("decision", "tier.decision_missing", "host package requires a bounded decision")
+    required_text("decision", "tier.decision_missing", "canonical package requires a bounded decision")
 
     if not _renderable_human_reasons(state):
         _add(
             issues,
             "tier.human_reason_missing",
-            "host package requires a named load-bearing reason linked to a validated titled URL",
+            "canonical package requires a named load-bearing reason linked to a validated titled URL",
             "/summary/load_bearing_claim_ids",
             "WARNING",
         )
@@ -982,7 +1046,7 @@ def _host_human_completeness(
         _add(
             issues,
             "tier.human_limitation_missing",
-            "host package requires a limitation or flip condition",
+            "canonical package requires a limitation or flip condition",
             "/engineering_handoff/constraints",
             "WARNING",
         )
@@ -1001,12 +1065,177 @@ def _host_human_completeness(
         _add(
             issues,
             "tier.human_safe_action_missing",
-            "host package requires a reversible safe action",
+            "canonical package requires a reversible safe action",
             "/engineering_handoff/safe_actions",
             "WARNING",
         )
         missing = True
+
+    acceptance_tests = handoff.get("acceptance_tests")
+
+    def valid_acceptance_test(value: Any) -> bool:
+        if not isinstance(value, str):
+            return False
+        for separator in ("=>", "->"):
+            check, found, expected = value.partition(separator)
+            if found and check.strip() and expected.strip():
+                return True
+        return False
+
+    has_acceptance_test = isinstance(acceptance_tests, list) and any(
+        valid_acceptance_test(test) for test in acceptance_tests
+    )
+    if not has_acceptance_test:
+        _add(
+            issues,
+            "tier.acceptance_tests_missing",
+            "Medium and High canonical packages require at least one acceptance test formatted as 'check => expected' or 'check -> expected'",
+            "/engineering_handoff/acceptance_tests",
+            "WARNING",
+        )
+        missing = True
+
     return not missing
+
+
+def _high_verifier_records(
+    state: dict[str, Any], events: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], str]:
+    load_ids = state.get("summary", {}).get("load_bearing_claim_ids")
+    claims = indexed(state.get("claims"))
+    packet_hash = None
+    if (
+        isinstance(load_ids, list)
+        and all(isinstance(claim_id, str) for claim_id in load_ids)
+        and all(claim_id in claims for claim_id in load_ids)
+    ):
+        packet_hash = sha256_hex([claims[claim_id] for claim_id in load_ids])
+
+    verifier_records = [
+        record
+        for record in state.get("verification", [])
+        if isinstance(record, dict) and record.get("kind") == "verifier"
+    ]
+    contract = state.get("contract", {})
+    requires_organizer_action = (
+        contract.get("execution") == "external_managed"
+        and contract.get("durability") == "canonical_package"
+    )
+    completed_organizer_actions = {
+        event.get("action_id")
+        for event in events
+        if event.get("event") == "permit_acquired"
+        and event.get("stage") == "context_separated_verification"
+        and event.get("category") == "organizer_pass"
+        and event.get("route") == "host"
+    }
+    completed_organizer_actions.intersection_update(
+        event.get("action_id")
+        for event in events
+        if event.get("event") == "attempt_status"
+        and event.get("status") == "completed"
+    )
+    valid = []
+    has_unbound_verifier = False
+    for record in verifier_records:
+        verifier_actor = record.get("verifier_actor")
+        candidate_actor = record.get("candidate_actor")
+        core_valid = (
+            record.get("completed") is True
+            and record.get("context_separated") is True
+            and record.get("produced_candidate") is False
+            and isinstance(verifier_actor, str)
+            and verifier_actor.strip()
+            and isinstance(candidate_actor, str)
+            and candidate_actor.strip()
+            and verifier_actor.strip() != candidate_actor.strip()
+            and record.get("packet_claim_ids") == load_ids
+            and packet_hash is not None
+            and record.get("packet_sha256") == packet_hash
+            and record.get("verdict") in HIGH_VERIFIER_VERDICTS
+            and isinstance(record.get("disposition"), str)
+            and record["disposition"].strip()
+        )
+        if core_valid and requires_organizer_action:
+            if record.get("action_id") not in completed_organizer_actions:
+                has_unbound_verifier = True
+                continue
+        if core_valid:
+            valid.append(record)
+    if not verifier_records:
+        issue_code = "tier.high_verifier_missing"
+    elif has_unbound_verifier:
+        issue_code = "tier.high_verifier_unbound"
+    else:
+        issue_code = "tier.high_verifier_invalid"
+    return valid, issue_code
+
+
+def _canonical_delivery_tier_contract(
+    state: dict[str, Any],
+    events: list[dict[str, Any]],
+    issues: list[Issue],
+) -> bool:
+    contract = state.get("contract", {})
+    if (
+        contract.get("durability") != "canonical_package"
+        or contract.get("tier") not in {"medium", "high"}
+    ):
+        return True
+
+    summary = state.get("summary", {})
+    status = summary.get("status")
+    if status not in TERMINAL_DELIVERY_STATUSES:
+        _add_once(
+            issues,
+            "tier.terminal_status_missing",
+            "Medium and High canonical packages require a terminal summary status",
+            "/summary/status",
+            "WARNING",
+        )
+        return False
+
+    load_ids = summary.get("load_bearing_claim_ids")
+    claims = indexed(state.get("claims"))
+    load_set_met = (
+        isinstance(load_ids, list)
+        and bool(load_ids)
+        and all(
+            isinstance(claim_id, str)
+            and claim_id in claims
+            and claims[claim_id].get("load_bearing") is True
+            for claim_id in load_ids
+        )
+    )
+    delivery_sealed = (
+        status == "BLOCKED"
+        and summary.get("human_status") in DELIVERY_HUMAN_STATUS_SENTINELS
+    )
+    # Keep a finalizer-sealed terminal shortfall as delivery-incomplete; an
+    # independently terminal package with no claims remains an evidence gap.
+    if not load_set_met and not delivery_sealed:
+        _add_once(
+            issues,
+            "tier.load_bearing_claims_missing",
+            "canonical package requires a load-bearing claim set",
+            "/summary",
+            "WARNING",
+        )
+
+    handoff_met = _canonical_handoff_completeness(state, issues)
+    verifier_met = True
+    if contract.get("tier") == "high":
+        valid_verifiers, issue_code = _high_verifier_records(state, events)
+        verifier_met = bool(valid_verifiers)
+        if not verifier_met:
+            _add_once(
+                issues,
+                issue_code,
+                "High canonical packages require a valid claim-packet verifier attestation",
+                "/verification",
+                "ERROR" if status == "PASS" else "WARNING",
+            )
+    return load_set_met and handoff_met and verifier_met
 
 
 def _validate_pass(
@@ -1101,15 +1330,6 @@ def _validate_pass(
     contract = state.get("contract", {})
     posture = contract.get("posture")
     tier = contract.get("tier")
-    host_package = (
-        contract.get("execution") == "host_native"
-        and contract.get("durability") == "canonical_package"
-        and any(
-            isinstance(artifact, dict)
-            and artifact.get("provenance", {}).get("origin_kind") == "host_capture"
-            for artifact in artifacts.values()
-        )
-    )
     verification = [item for item in state.get("verification", []) if isinstance(item, dict)]
     if posture == "lookup":
         for claim_id in load_ids:
@@ -1137,40 +1357,6 @@ def _validate_pass(
         for joint in state.get("inference_joints", [])
     ):
         _add(issues, "posture.decision_joint_missing", "decision inference joint review is missing", "/inference_joints")
-    high_verifiers = [
-        item
-        for item in verification
-        if item.get("kind") == "verifier"
-        and item.get("completed") is True
-        and item.get("context_separated") is True
-        and item.get("produced_candidate") is False
-    ]
-    if tier == "high" and not high_verifiers and not host_package:
-        _add(issues, "tier.high_verifier_missing", "High PASS requires a context-separated verifier", "/verification")
-    elif tier == "high" and not host_package:
-        bound_actions = {
-            event.get("action_id")
-            for event in events
-            if event.get("event") == "permit_acquired"
-            and event.get("stage") == "context_separated_verification"
-            and event.get("category") == "organizer_pass"
-            and event.get("route") == "host"
-        }
-        completed_actions = {
-            event.get("action_id")
-            for event in events
-            if event.get("event") == "attempt_status" and event.get("status") == "completed"
-        }
-        if not any(
-            verifier.get("action_id") in bound_actions & completed_actions
-            for verifier in high_verifiers
-        ):
-            _add(
-                issues,
-                "tier.high_verifier_unbound",
-                "High verifier is not bound to a completed reserved verifier action",
-                "/verification",
-            )
 
 
 def _validate_partial(
@@ -1260,9 +1446,11 @@ def _validate_loaded_session(
         _validate_pass(state, events, artifacts, raw_payloads, evidence_map, issues)
     elif status == "PARTIAL":
         _validate_partial(state, artifacts, raw_payloads, evidence_map, issues)
-    tier_contract_met = _host_capture_tier_contract(
+    canonical_delivery_met = _canonical_delivery_tier_contract(state, events, issues)
+    host_capture_met = _host_capture_tier_contract(
         state, events, artifacts, raw_payloads, evidence_map, issues
     )
+    tier_contract_met = canonical_delivery_met and host_capture_met
     integrity_prefixes = (
         "state.",
         "event.",
@@ -1282,7 +1470,11 @@ def _validate_loaded_session(
     human_recommendation = summary.get("human_recommendation", "")
     if not isinstance(human_recommendation, str):
         human_recommendation = ""
-    human_status = "證據不足" if not tier_contract_met else summary.get("human_status", "")
+    human_status = (
+        tier_shortfall_labels(issues)[0]
+        if not tier_contract_met
+        else summary.get("human_status", "")
+    )
     if not isinstance(human_status, str):
         human_status = ""
     if check_report:

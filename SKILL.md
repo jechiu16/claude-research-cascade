@@ -3,14 +3,6 @@ name: deep
 description: Portable /deep research trigger for Claude Code and OpenAI Codex. Use only when the user explicitly types /deep to start a bounded, evidence-gated research session.
 ---
 
-# Agent Deep Research Trigger
-
-SKILL.md is the sole default and human protocol shared by
-Claude Code and OpenAI Codex. AGENTS.md is a thin host binding; HARNESS.md is
-an implementation and recovery reference only.
-It makes `/deep` one host-native research trigger, not a visible orchestration
-platform. The runtime is used only after the user explicitly types `/deep`.
-
 <!-- PURE_TRIGGER_CARD_START -->
 問題：{正規化後的問題}
 建議：{層級}，因為{一個理由}
@@ -21,55 +13,46 @@ High：直接取得至少兩個不同來源，並交付套件。
 開始：Low｜Medium｜High｜調整
 <!-- PURE_TRIGGER_CARD_END -->
 
-Choosing a tier is the only confirmation. `Adjust` changes the scope and shows
-a new card; it does not start research. Do not expose kernel diagnostics in
-the card or the normal happy path.
+# Agent Deep Research Trigger
 
-Any internal epistemic posture is Organizer bookkeeping, not a user-facing
-choice; the card exposes only Low, Medium, and High.
+SKILL.md is the sole human protocol shared by Claude Code and OpenAI Codex.
+The first `/deep` response is exactly the seven card lines above, with no prose
+before or after. Normalize and recommend from conversation text only.
+If no research question is recognizable, still show the card with
+`問題：尚未提供研究問題` and `建議：調整，因為需要先提供研究問題`; do not ask first.
+額外付費請求只計 provider/API paid calls；host-native retrieval、local、Organizer 不計，無計畫 external paid route 時預設為 0。
 
-## Default Flow
+## Before Selection
 
-1. Normalize the question and recommend Low, Medium, or High with one reason.
-2. Show the seven-line card above, including exact extra paid-request count
-   and local-data egress. Ask only questions that change scope or cost.
-3. Wait for exactly one choice. Host-native search, fetch, browser, local
-   inspection, model reasoning, and subagents are the default actions.
-4. Report phase-only progress using only these natural Traditional Chinese
-   phases, in order: 界定問題 -> 蒐集資料 -> 交叉檢查 -> 形成結論 -> 交付結果.
-   This progress is user-visible; the English tokens `frame` -> `gather` ->
-   `check` -> `conclude` -> `deliver` are internal labels only.
-   Do not narrate internal routing or accounting.
-5. Low returns a bounded Traditional Chinese chat answer and links. It creates
-   no package by default.
-6. Medium adds a source only for a named gap, conflict, or decision risk. It
-   always delivers canonical JSON and `zh-Hant-TW` HTML, including partial or
-   blocked results.
-7. High directly obtains at least two different sources, discloses shared
-   upstreams, and applies the same package delivery rule. The machine proves
-   lineage and diversity, never independence or truth.
+Host discovery may read the wrapper and canonical SKILL.md to load this
+instruction; that is not a research action. Before selection, do not call tools
+or inspect research, project, runtime, or source material; do not search the web,
+run scripts, or start workers. Low never reads or invokes the runtime. The tier
+choice is the only confirmation; `調整` shows a new card and starts no research.
 
-External paid requests and local-data egress are semantic changes. Disclose
-their exact enforceable counts before selection; an unapproved change starts a
-new run rather than a second confirmation.
+## After Selection
+
+After Medium or High is selected, read [HARNESS.md](HARNESS.md) beside this
+canonical skill and follow its internal runtime bridge. Do not expose bridge
+commands as user steps. Report only: 界定問題 -> 蒐集資料 -> 交叉檢查 -> 形成結論
+-> 交付結果.
+
+Low returns a bounded Traditional Chinese chat answer and links. Medium adds a
+direct source for a named gap, conflict, or decision risk. High directly gets at
+least two different sources. Medium and High always deliver canonical JSON and
+`zh-Hant-TW` HTML, including blocked results.
 
 ## Evidence And Delivery
 
 Medium load-bearing claims require a directly captured source and a named
-marginal purpose. High requires two qualifying captures with immutable bytes,
-distinct canonical source keys and hashes, and exact supporting excerpts. If
-the floor is not met, still render the package with human status `evidence
-insufficient`.
+marginal purpose. High requires two qualifying captures with distinct canonical
+source keys and content hashes, exact excerpts, and shared-upstream disclosure;
+agreement never proves independence or truth.
 
-Keep `integrity_ok`, `tier_contract_met`, and the Organizer recommendation as
-separate facts. End Medium and High with one bounded conclusion, human status,
-HTML link, limitations or flip conditions, and one reversible next step.
+Fail closed: an evidence-floor gap yields canonical `BLOCKED`/`證據不足` and HTML
+`EVIDENCE_INSUFFICIENT`; a terminal/handoff/completeness gap yields canonical
+`BLOCKED`/`交付不完整` and HTML `DELIVERY_INCOMPLETE`.
 
-When the user's working language is Traditional Chinese, write human-facing
-canonical narrative fields in Traditional Chinese. Preserve exact evidence excerpts,
-source titles, identifiers, URLs, and machine diagnostics in their
-original form. Confirm, validate, and render are runtime operations, not user
-facing ceremony.
-
-The optional [HARNESS.md](HARNESS.md) reference explains the canonical state,
-recovery, and delivery gates. It is not required to execute this default flow.
+Write human-facing canonical narrative fields in Traditional Chinese when it is
+the user's working language. Preserve exact excerpts, source titles, identifiers,
+URLs, and machine diagnostics in their original form.

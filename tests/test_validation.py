@@ -4,12 +4,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from research_harness._canon import sha256_hex
 from research_harness.artifacts import ingest_fetched_source
-from research_harness.storage import apply_state_patch, load_state
+from research_harness.rendering import finalize_session_result
+from research_harness.state import new_state
+from research_harness.storage import apply_state_patch, create_session, load_state
 from research_harness.validation import _validate_evidence, validate_session
 from tests.helpers import (
     NOW,
     append_valid_test_event_line,
+    confirmed_medium_contract,
     make_complete_pass_session,
     make_incomplete_session,
     make_partial_session,
@@ -175,6 +179,45 @@ class ValidationTests(unittest.TestCase):
         session = make_complete_pass_session(self.root, "medium", "lookup")
         report = validate_session(session)
         self.assertTrue(report.ok, report.to_dict())
+        state = load_state(session)
+        self.assertEqual(state["contract"]["execution"], "external_managed")
+        self.assertEqual(state["summary"]["status"], "PASS")
+
+    def test_fresh_external_medium_finalizes_as_delivery_incomplete(self) -> None:
+        session = self.root / "fresh-external-medium"
+        create_session(session, new_state(confirmed_medium_contract(), NOW, None, {}))
+
+        report = validate_session(session)
+        self.assertFalse(report.tier_contract_met, report.to_dict())
+        self.assertEqual(report.human_status, "交付不完整")
+        self.assertIn("tier.terminal_status_missing", {issue.code for issue in report.warnings})
+
+        rendered = finalize_session_result(session, NOW)
+        state = load_state(session)
+        self.assertEqual(state["summary"]["status"], "BLOCKED")
+        self.assertEqual(state["summary"]["human_status"], "交付不完整")
+        self.assertFalse(rendered.validation.tier_contract_met)
+        self.assertIn(
+            "BLOCKED / DELIVERY_INCOMPLETE", rendered.path.read_text(encoding="utf-8")
+        )
+
+    def test_terminal_blocked_external_package_without_claims_is_evidence_shortfall(self) -> None:
+        session = self.root / "blocked-external-medium"
+        create_session(session, new_state(confirmed_medium_contract(), NOW, None, {}))
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [{"op": "replace", "path": "/summary/status", "value": "BLOCKED"}],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        report = validate_session(session)
+        self.assertFalse(report.tier_contract_met, report.to_dict())
+        self.assertEqual(report.human_status, "證據不足")
+        self.assertIn(
+            "tier.load_bearing_claims_missing", {issue.code for issue in report.warnings}
+        )
 
     def test_complete_high_decision_with_separated_verifier_passes(self) -> None:
         session = make_complete_pass_session(self.root, "high", "decision")
@@ -238,6 +281,55 @@ class ValidationTests(unittest.TestCase):
         )
         report = validate_session(session)
         self.assertIn("tier.high_verifier_unbound", {issue.code for issue in report.errors})
+
+    def test_external_high_terminal_verifier_requires_completed_organizer_action(self) -> None:
+        for status in ("PARTIAL", "BLOCKED"):
+            with self.subTest(status=status):
+                session = make_complete_pass_session(self.root, "high", "decision")
+                state = load_state(session)
+                verifier_index = next(
+                    index
+                    for index, item in enumerate(state["verification"])
+                    if item.get("kind") == "verifier"
+                )
+                apply_state_patch(
+                    session,
+                    [
+                        {"op": "replace", "path": "/summary/status", "value": status},
+                        {
+                            "op": "replace",
+                            "path": f"/verification/{verifier_index}/action_id",
+                            "value": "MISSING-ORGANIZER-ACTION",
+                        },
+                    ],
+                    state["session"]["revision"],
+                    NOW,
+                )
+
+                missing = validate_session(session)
+                self.assertFalse(missing.tier_contract_met, missing.to_dict())
+                self.assertFalse(missing.ok, missing.to_dict())
+                self.assertIn(
+                    "tier.high_verifier_unbound",
+                    {issue.code for issue in missing.warnings},
+                )
+
+                state = load_state(session)
+                apply_state_patch(
+                    session,
+                    [
+                        {
+                            "op": "replace",
+                            "path": f"/verification/{verifier_index}/action_id",
+                            "value": "O1",
+                        }
+                    ],
+                    state["session"]["revision"],
+                    NOW,
+                )
+                complete = validate_session(session)
+                self.assertTrue(complete.tier_contract_met, complete.to_dict())
+                self.assertTrue(complete.ok, complete.to_dict())
 
     def test_empirical_load_bearing_claim_needs_two_independent_origins(self) -> None:
         session = make_complete_pass_session(self.root, "high", "decision")
@@ -303,6 +395,19 @@ class ValidationTests(unittest.TestCase):
             NOW,
         )
         state = load_state(session)
+        claim = dict(state["claims"][0])
+        claim.update(
+            {
+                "claim_type": "empirical",
+                "supporting_evidence_ids": ["E1", "E2"],
+                "source_origin_ids": ["O1", "O2"],
+            }
+        )
+        verifier_index = next(
+            index
+            for index, record in enumerate(state["verification"])
+            if record.get("kind") == "verifier"
+        )
         apply_state_patch(
             session,
             [
@@ -323,16 +428,15 @@ class ValidationTests(unittest.TestCase):
                         "retrieved_at": NOW,
                     },
                 },
-                {"op": "replace", "path": "/claims/0/claim_type", "value": "empirical"},
                 {
                     "op": "replace",
-                    "path": "/claims/0/supporting_evidence_ids",
-                    "value": ["E1", "E2"],
+                    "path": "/claims/0",
+                    "value": claim,
                 },
                 {
                     "op": "replace",
-                    "path": "/claims/0/source_origin_ids",
-                    "value": ["O1", "O2"],
+                    "path": f"/verification/{verifier_index}/packet_sha256",
+                    "value": sha256_hex([claim]),
                 },
             ],
             state["session"]["revision"],
