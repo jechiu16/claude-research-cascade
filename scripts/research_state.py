@@ -110,7 +110,7 @@ def _read_json(path: str | Path) -> Any:
     source = Path(path)
     try:
         return json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"cannot read JSON from {source}: {exc}") from exc
 
 

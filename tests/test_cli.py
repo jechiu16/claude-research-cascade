@@ -1357,3 +1357,17 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CLIReadJSONDecodeTests(unittest.TestCase):
+    def test_undecodable_contract_bytes_raise_typed_error(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        import research_state
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            bad = Path(tempdir) / "contract.json"
+            bad.write_bytes(b'{"posture": "look\xff\xfeup"}')
+            with self.assertRaises(ValueError):
+                research_state._read_json(bad)
