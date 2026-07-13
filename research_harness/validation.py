@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from ._canon import RETENTION_RANK, indexed, sha256_hex
+from ._canon import RETENTION_RANK, canonical_source_key, indexed, sha256_hex
 from .artifacts import MEDIA_EXTENSIONS, SCANNER_VERSION
 from .quota import ATTEMPT_TRANSITIONS
 from .state import state_sha256, validate_state_document
@@ -40,10 +40,14 @@ class Issue:
 class ValidationReport:
     issues: tuple[Issue, ...]
     state_sha256: str
+    integrity_ok: bool = True
+    tier_contract_met: bool = True
+    human_recommendation: str = ""
+    human_status: str = ""
 
     @property
     def ok(self) -> bool:
-        return not self.errors
+        return not self.errors and self.tier_contract_met
 
     @property
     def errors(self) -> tuple[Issue, ...]:
@@ -56,6 +60,10 @@ class ValidationReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "ok": self.ok,
+            "integrity_ok": self.integrity_ok,
+            "tier_contract_met": self.tier_contract_met,
+            "human_recommendation": self.human_recommendation,
+            "human_status": self.human_status,
             "state_sha256": self.state_sha256,
             "issues": [asdict(issue) for issue in self.issues],
             "errors": [asdict(issue) for issue in self.errors],
@@ -299,6 +307,43 @@ def _validate_artifacts(
             occurrence = occurrences.get(provenance.get("fetch_occurrence_id"))
             if source_id not in sources or occurrence is None or occurrence.get("source_id") != source_id:
                 _add(issues, "artifact.provenance", "fetched artifact lineage is missing", path_root)
+        elif origin_kind == "host_capture":
+            capture = artifact.get("host_capture")
+            if not isinstance(capture, dict):
+                _add(issues, "artifact.host_capture", "host capture metadata is missing", path_root)
+                continue
+            required = {
+                "source_url",
+                "source_title",
+                "canonical_source_key",
+                "upstream_key",
+                "fidelity",
+                "captured_at",
+                "marginal_purpose",
+            }
+            if set(capture) != required:
+                _add(issues, "artifact.host_capture", "host capture metadata is incomplete", path_root)
+            if not isinstance(capture.get("source_url"), str) or not capture["source_url"].strip():
+                _add(issues, "artifact.host_capture", "host capture source URL is missing", path_root)
+            else:
+                try:
+                    expected_key = canonical_source_key(capture["source_url"])
+                except ValueError:
+                    expected_key = None
+                    _add(issues, "artifact.host_capture", "host capture source URL is invalid", path_root)
+                if expected_key != capture.get("canonical_source_key"):
+                    _add(issues, "artifact.host_capture", "host capture source key does not match source URL", path_root)
+            if not isinstance(capture.get("source_title"), str) or not capture["source_title"].strip():
+                _add(issues, "artifact.host_capture", "host capture source title is missing", path_root)
+            if not isinstance(capture.get("canonical_source_key"), str) or not capture["canonical_source_key"].strip():
+                _add(issues, "artifact.host_capture", "host capture source key is missing", path_root)
+            if not isinstance(capture.get("upstream_key"), str) or not capture["upstream_key"].strip():
+                _add(issues, "artifact.host_capture", "host capture upstream key is missing", path_root)
+            if capture.get("fidelity") not in {"raw_http", "host_rendered"}:
+                _add(issues, "artifact.host_capture", "host capture fidelity is invalid", path_root)
+            for field in ("captured_at", "marginal_purpose"):
+                if not isinstance(capture.get(field), str) or not capture[field].strip():
+                    _add(issues, "artifact.host_capture", f"host capture {field} is missing", path_root)
         elif origin_kind == "provider_payload":
             provider_id = provenance.get("provider_id")
             attempt_id = provenance.get("attempt_or_occurrence_id")
@@ -360,6 +405,36 @@ def _validate_evidence(
         if artifact is None:
             _add(issues, "evidence.artifact_missing", "evidence artifact record is missing", path)
         provenance = artifact.get("provenance", {}) if artifact is not None else {}
+        if provenance.get("origin_kind") == "host_capture" and artifact is not None:
+            capture = artifact.get("host_capture", {})
+            if source is not None:
+                try:
+                    derived_key = canonical_source_key(source.get("url"))
+                except (TypeError, ValueError):
+                    derived_key = None
+                    _add(issues, "evidence.source_url_invalid", "host evidence source URL is invalid", path)
+                if derived_key != source.get("canonical_source_key") or derived_key != capture.get(
+                    "canonical_source_key"
+                ):
+                    _add(
+                        issues,
+                        "evidence.host_capture_source_key_mismatch",
+                        "host evidence source key does not match captured artifact",
+                        path,
+                    )
+                for field in ("url", "title", "upstream_key"):
+                    capture_field = {
+                        "url": "source_url",
+                        "title": "source_title",
+                        "upstream_key": "upstream_key",
+                    }[field]
+                    if source.get(field) != capture.get(capture_field):
+                        _add(
+                            issues,
+                            "evidence.host_capture_source_metadata_mismatch",
+                            "host evidence source metadata does not match captured artifact",
+                            path,
+                        )
         if provenance.get("origin_kind") == "provider_payload":
             provider = providers.get(provenance.get("provider_id"))
             if (
@@ -454,6 +529,267 @@ def _claim_has_available_evidence(
     return False
 
 
+def _host_capture_tier_contract(
+    state: dict[str, Any],
+    events: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    raw_payloads: dict[str, bytes],
+    evidence_map: dict[str, dict[str, Any]],
+    issues: list[Issue],
+) -> bool:
+    """Check only facts observable from host capture lineage.
+
+    Explicit host-native canonical-package axes opt a package into this
+    pure-trigger gate; legacy contracts without those axes retain their
+    existing validation semantics.
+    """
+
+    contract = state.get("contract", {})
+    if (
+        contract.get("execution") != "host_native"
+        or contract.get("durability") != "canonical_package"
+        or contract.get("tier") not in {"medium", "high"}
+    ):
+        return True
+
+    host_artifacts = {
+        artifact_id: artifact
+        for artifact_id, artifact in artifacts.items()
+        if artifact.get("provenance", {}).get("origin_kind") == "host_capture"
+    }
+    host_permits = [
+        event
+        for event in events
+        if event.get("event") == "permit_acquired"
+        and (
+            event.get("category") in {"host_retrieval", "local", "organizer_pass"}
+            or event.get("route") in {"host-web", "host", "local"}
+        )
+    ]
+    host_attempts = [
+        event
+        for event in events
+        if event.get("event") == "attempt_status"
+        and event.get("action_id")
+        in {permit.get("action_id") for permit in host_permits}
+    ]
+    if host_permits or host_attempts:
+        _add(
+            issues,
+            "host.accounting",
+            "host-native packages cannot contain host permits, attempts, or quota events",
+            "/events",
+        )
+
+    if not host_artifacts:
+        _add(
+            issues,
+            "tier.capture_missing",
+            "host-native canonical packages require at least one host capture",
+            "/artifact_index",
+            "WARNING",
+        )
+        return False
+
+    load_ids = state.get("summary", {}).get("load_bearing_claim_ids", [])
+    claims = indexed(state.get("claims"))
+
+    def qualifying(evidence_id: Any) -> tuple[str, str, str] | None:
+        evidence = evidence_map.get(evidence_id)
+        if not isinstance(evidence, dict):
+            return None
+        artifact = artifacts.get(evidence.get("artifact_id"))
+        if (
+            not isinstance(artifact, dict)
+            or artifact.get("provenance", {}).get("origin_kind") != "host_capture"
+            or artifact.get("availability") != "available"
+            or artifact.get("id") not in raw_payloads
+        ):
+            return None
+        if any(
+            issue.code
+            in {
+                "evidence.excerpt_bounds",
+                "evidence.excerpt_mismatch",
+                "evidence.source_missing",
+                "evidence.source_url_invalid",
+                "evidence.host_capture_source_key_mismatch",
+                "evidence.host_capture_source_metadata_mismatch",
+            }
+            and issue.path == f"/evidence/{evidence_id}"
+            for issue in issues
+        ):
+            return None
+        capture = artifact.get("host_capture", {})
+        key = capture.get("canonical_source_key")
+        digest = artifact.get("sha256")
+        if not isinstance(key, str) or not isinstance(digest, str):
+            return None
+        upstream = capture.get("upstream_key")
+        if not isinstance(upstream, str) or not upstream.strip():
+            return None
+        return key, digest, upstream
+
+    if not isinstance(load_ids, list) or not load_ids:
+        _add(issues, "tier.load_bearing_claims_missing", "host package requires a load-bearing claim set", "/summary")
+        return False
+
+    per_claim: dict[str, list[tuple[str, str, str]]] = {}
+    all_captures: list[tuple[str, str, str]] = []
+    for claim_id in load_ids:
+        claim = claims.get(claim_id)
+        links = claim.get("supporting_evidence_ids", []) if isinstance(claim, dict) else []
+        matches = [match for evidence_id in links for match in [qualifying(evidence_id)] if match is not None]
+        per_claim[claim_id] = matches
+        all_captures.extend(matches)
+
+    tier = state.get("contract", {}).get("tier")
+    if tier == "medium":
+        missing = [claim_id for claim_id, matches in per_claim.items() if not matches]
+        if missing:
+            _add(
+                issues,
+                "tier.medium_direct_capture_missing",
+                "each Medium load-bearing claim requires a directly captured source",
+                "/summary/load_bearing_claim_ids",
+                "WARNING",
+            )
+            return False
+        return not (host_permits or host_attempts) and _host_human_completeness(state, issues)
+    if tier != "high":
+        return True
+
+    distinct_pair = any(
+        left[0] != right[0]
+        and left[1] != right[1]
+        for index, left in enumerate(all_captures)
+        for right in all_captures[index + 1 :]
+    )
+    if not distinct_pair:
+        _add(
+            issues,
+            "tier.high_capture_diversity",
+            "High requires two linked captures with distinct source keys and content hashes",
+            "/summary/load_bearing_claim_ids",
+            "WARNING",
+        )
+        return False
+    return not (host_permits or host_attempts) and _host_human_completeness(state, issues)
+
+
+def _renderable_human_reasons(
+    state: dict[str, Any],
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """Return load-bearing claims with at least one validated titled URL source."""
+
+    claims = indexed(state.get("claims"))
+    evidence = indexed(state.get("evidence"))
+    sources = indexed(state.get("sources"))
+    renderable: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+    for claim_id in state.get("summary", {}).get("load_bearing_claim_ids", []):
+        claim = claims.get(claim_id)
+        if (
+            not isinstance(claim, dict)
+            or claim.get("load_bearing") is not True
+            or not isinstance(claim.get("text"), str)
+            or not claim["text"].strip()
+        ):
+            continue
+        linked_sources: list[dict[str, Any]] = []
+        for evidence_id in claim.get("supporting_evidence_ids", []):
+            evidence_item = evidence.get(evidence_id)
+            source = sources.get(evidence_item.get("source_id")) if isinstance(evidence_item, dict) else None
+            if not isinstance(source, dict):
+                continue
+            try:
+                derived_key = canonical_source_key(source.get("url"))
+            except (TypeError, ValueError):
+                continue
+            if (
+                not isinstance(source.get("title"), str)
+                or not source["title"].strip()
+                or source.get("canonical_source_key") != derived_key
+            ):
+                continue
+            linked_sources.append(source)
+        if linked_sources:
+            renderable.append((claim, linked_sources))
+    return renderable
+
+
+def _host_human_completeness(
+    state: dict[str, Any],
+    issues: list[Issue],
+) -> bool:
+    summary = state.get("summary", {})
+    missing = False
+
+    def required_text(field: str, code: str, message: str) -> None:
+        nonlocal missing
+        if not isinstance(summary.get(field), str) or not summary[field].strip():
+            _add(issues, code, message, f"/summary/{field}", "WARNING")
+            missing = True
+
+    required_text("human_status", "tier.human_status_missing", "host package requires an explicit human status")
+    required_text(
+        "human_recommendation",
+        "tier.human_recommendation_missing",
+        "host package requires an explicit human recommendation",
+    )
+    required_text("decision", "tier.decision_missing", "host package requires a bounded decision")
+
+    if not _renderable_human_reasons(state):
+        _add(
+            issues,
+            "tier.human_reason_missing",
+            "host package requires a named load-bearing reason linked to a validated titled URL",
+            "/summary/load_bearing_claim_ids",
+            "WARNING",
+        )
+        missing = True
+
+    handoff = state.get("engineering_handoff", {})
+    limitation_values: list[Any] = []
+    for values in (handoff.get("constraints"), state.get("open_questions")):
+        if isinstance(values, list):
+            limitation_values.extend(values)
+    limitation_values.extend(
+        claim.get("would_change_if")
+        for claim in state.get("claims", [])
+        if isinstance(claim, dict)
+    )
+    has_limitation = any(isinstance(value, str) and value.strip() for value in limitation_values)
+    if not has_limitation:
+        _add(
+            issues,
+            "tier.human_limitation_missing",
+            "host package requires a limitation or flip condition",
+            "/engineering_handoff/constraints",
+            "WARNING",
+        )
+        missing = True
+
+    has_reversible_action = any(
+        isinstance(action, dict)
+        and action.get("reversible") is True
+        and isinstance(action.get("id"), str)
+        and action["id"].strip()
+        and isinstance(action.get("description"), str)
+        and action["description"].strip()
+        for action in handoff.get("safe_actions", [])
+    )
+    if not has_reversible_action:
+        _add(
+            issues,
+            "tier.human_safe_action_missing",
+            "host package requires a reversible safe action",
+            "/engineering_handoff/safe_actions",
+            "WARNING",
+        )
+        missing = True
+    return not missing
+
+
 def _validate_pass(
     state: dict[str, Any],
     events: list[dict[str, Any]],
@@ -546,6 +882,15 @@ def _validate_pass(
     contract = state.get("contract", {})
     posture = contract.get("posture")
     tier = contract.get("tier")
+    host_package = (
+        contract.get("execution") == "host_native"
+        and contract.get("durability") == "canonical_package"
+        and any(
+            isinstance(artifact, dict)
+            and artifact.get("provenance", {}).get("origin_kind") == "host_capture"
+            for artifact in artifacts.values()
+        )
+    )
     verification = [item for item in state.get("verification", []) if isinstance(item, dict)]
     if posture == "lookup":
         for claim_id in load_ids:
@@ -581,9 +926,9 @@ def _validate_pass(
         and item.get("context_separated") is True
         and item.get("produced_candidate") is False
     ]
-    if tier == "high" and not high_verifiers:
+    if tier == "high" and not high_verifiers and not host_package:
         _add(issues, "tier.high_verifier_missing", "High PASS requires a context-separated verifier", "/verification")
-    elif tier == "high":
+    elif tier == "high" and not host_package:
         bound_actions = {
             event.get("action_id")
             for event in events
@@ -693,9 +1038,43 @@ def _validate_loaded_session(
         _validate_pass(state, events, artifacts, raw_payloads, evidence_map, issues)
     elif status == "PARTIAL":
         _validate_partial(state, artifacts, raw_payloads, evidence_map, issues)
+    tier_contract_met = _host_capture_tier_contract(
+        state, events, artifacts, raw_payloads, evidence_map, issues
+    )
+    integrity_prefixes = (
+        "state.",
+        "event.",
+        "quota.",
+        "attempt.",
+        "artifact.",
+        "evidence.",
+        "capture.",
+        "host.",
+        "report.",
+    )
+    integrity_ok = not any(
+        issue.level == "ERROR" and issue.code.startswith(integrity_prefixes) for issue in issues
+    )
+    summary = state.get("summary", {})
+    human_recommendation = summary.get("human_recommendation", "")
+    if not isinstance(human_recommendation, str):
+        human_recommendation = ""
+    human_status = "證據不足" if not tier_contract_met else summary.get("human_status", "")
+    if not isinstance(human_status, str):
+        human_status = ""
     if check_report:
         _validate_report_hash(session_dir, current_hash, issues)
-    return ValidationReport(tuple(issues), current_hash)
+        integrity_ok = not any(
+            issue.level == "ERROR" and issue.code.startswith(integrity_prefixes) for issue in issues
+        )
+    return ValidationReport(
+        tuple(issues),
+        current_hash,
+        integrity_ok,
+        tier_contract_met,
+        human_recommendation,
+        human_status,
+    )
 
 
 def validate_session(session_dir: Path, check_report: bool = True) -> ValidationReport:

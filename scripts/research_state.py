@@ -378,6 +378,8 @@ def _demo_contract(registry: dict[str, Any]) -> dict[str, Any]:
     contract = {
         "posture": "lookup",
         "tier": "custom",
+        "execution": "external_managed",
+        "durability": "canonical_package",
         "scout_route": "demo-probe",
         "resource_envelope": {
             "physical_ceiling": {
@@ -656,7 +658,7 @@ def command_recover(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 def command_validate(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     report = validate_session(Path(args.session))
-    return report.to_dict(), 0 if report.ok else 1
+    return report.to_dict(), 0 if report.ok else 1 if report.errors else 2
 
 
 def command_render(args: argparse.Namespace) -> tuple[dict[str, Any], int]:

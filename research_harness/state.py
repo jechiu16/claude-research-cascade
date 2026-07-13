@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Mapping, Optional
 
 from ._canon import sha256_hex
-from .contracts import normalize_contract, validate_contract
+from .contracts import normalize_contract, validate_contract, _validate_persisted_contract
 from .providers import (
     load_provider_registry,
     preflight_contract_routes,
@@ -20,6 +20,7 @@ from .providers import (
 
 
 SCHEMA_VERSION = "2.0"
+CONTRACT_SEMANTICS = "pure_trigger_v1"
 REQUIRED_SECTIONS = (
     "schema_version",
     "session",
@@ -101,6 +102,7 @@ def new_state(
             "revision": 0,
             "created_at": now,
             "updated_at": now,
+            "contract_semantics": CONTRACT_SEMANTICS,
         },
         "contract": normalized,
         "capabilities": {
@@ -114,6 +116,8 @@ def new_state(
             "status": "IN_PROGRESS",
             "decision": "",
             "load_bearing_claim_ids": [],
+            "human_recommendation": "",
+            "human_status": "",
         },
         "hypotheses": [],
         "planned_checks": [],
@@ -231,6 +235,7 @@ def validate_state_document(state: dict[str, Any]) -> list[str]:
         errors.append(f"state schema_version must be {SCHEMA_VERSION}")
 
     session = state.get("session")
+    session_semantics = session.get("contract_semantics") if isinstance(session, dict) else None
     if not isinstance(session, dict):
         errors.append("state session must be an object")
     else:
@@ -240,6 +245,8 @@ def validate_state_document(state: dict[str, Any]) -> list[str]:
         for field in ("id", "created_at", "updated_at"):
             if not isinstance(session.get(field), str) or not session.get(field):
                 errors.append(f"session {field} is required")
+        if session_semantics not in {None, CONTRACT_SEMANTICS}:
+            errors.append("session contract_semantics is invalid")
 
     capabilities = state.get("capabilities")
     providers: list[dict[str, Any]] = []
@@ -271,9 +278,14 @@ def validate_state_document(state: dict[str, Any]) -> list[str]:
         snapshot_registry = {"schema_version": "1.0", "providers": copy.deepcopy(providers)}
         registry_errors = validate_provider_registry(snapshot_registry)
         errors.extend(f"capability snapshot: {error}" for error in registry_errors)
+        contract_errors = (
+            validate_contract
+            if session_semantics
+            else _validate_persisted_contract
+        )
         errors.extend(
             f"contract: {error}"
-            for error in validate_contract(
+            for error in contract_errors(
                 contract,
                 snapshot_registry,
                 resolved_registry_sha256=capabilities.get("registry_sha256"),

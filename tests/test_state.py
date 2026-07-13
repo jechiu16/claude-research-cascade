@@ -8,6 +8,7 @@ from research_harness.providers import (
     provider_records_sha256,
     provider_registry_sha256,
 )
+from research_harness.contracts import contract_card_sha256
 from research_harness.state import new_state, state_sha256, validate_state_document
 from tests.helpers import NOW, confirmed_medium_contract
 
@@ -58,6 +59,7 @@ class StateTests(unittest.TestCase):
             "artifact_index",
         }
         self.assertEqual(set(state), expected)
+        self.assertEqual(state["session"]["contract_semantics"], "pure_trigger_v1")
         self.assertEqual(state["session"]["revision"], 0)
         self.assertEqual(validate_state_document(state), [])
 
@@ -68,6 +70,30 @@ class StateTests(unittest.TestCase):
         errors = validate_state_document(state)
         self.assertIn("state section claims is required", errors)
         self.assertIn("duplicate evidence id E1", errors)
+
+    def test_new_state_rejects_missing_contract_axes(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract.pop("execution")
+        contract.pop("durability")
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        with self.assertRaisesRegex(ValueError, "execution and durability axes are required"):
+            new_state("Q", contract, NOW, self.registry, {})
+
+    def test_persisted_legacy_state_remains_valid_without_axes(self) -> None:
+        legacy = copy.deepcopy(new_state("Q", self.contract, NOW, self.registry, {}))
+        legacy["contract"].pop("execution")
+        legacy["contract"].pop("durability")
+        legacy["session"].pop("contract_semantics")
+        legacy["contract"]["confirmation"]["card_sha256"] = contract_card_sha256(legacy["contract"])
+        self.assertEqual(validate_state_document(legacy), [])
+
+    def test_semantics_marker_requires_paired_axes(self) -> None:
+        state = new_state("Q", self.contract, NOW, self.registry, {})
+        state["contract"].pop("execution")
+        state["contract"].pop("durability")
+        state["contract"]["confirmation"]["card_sha256"] = contract_card_sha256(state["contract"])
+        errors = validate_state_document(state)
+        self.assertIn("contract: contract execution and durability axes are required", errors)
 
     def test_state_document_rejects_broken_references(self) -> None:
         state = new_state("Q", self.contract, NOW, self.registry, {})

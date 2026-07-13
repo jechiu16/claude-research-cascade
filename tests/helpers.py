@@ -24,6 +24,8 @@ def draft_medium_contract() -> dict[str, Any]:
     return {
         "posture": "lookup",
         "tier": "medium",
+        "execution": "external_managed",
+        "durability": "canonical_package",
         "scout_route": "host-web",
         "resource_envelope": {
             "physical_ceiling": {
@@ -153,6 +155,7 @@ def confirmed_contract(
     contract = normalize_contract(draft_medium_contract())
     contract["tier"] = tier
     contract["posture"] = posture
+    contract["durability"] = "chat_only" if tier == "low" else "canonical_package"
     if tier == "high":
         contract["resource_envelope"]["physical_ceiling"]["organizer_pass"] = 2
         contract["stage_permit_map"].append(
@@ -206,6 +209,8 @@ def confirmed_demo_contract(
     resolved = copy.deepcopy(load_provider_registry() if registry is None else registry)
     contract = draft_medium_contract()
     contract["tier"] = "custom"
+    contract["execution"] = "external_managed"
+    contract["durability"] = "canonical_package"
     contract["scout_route"] = route
     contract["resource_envelope"]["physical_ceiling"].update(
         {"probe": probe_ceiling, "host_retrieval": 0}
@@ -350,6 +355,8 @@ def make_complete_pass_session(
                     "tier": "T1",
                     "title": "Authoritative fixture",
                     "url": "https://example.test/authoritative",
+                    "canonical_source_key": "https://example.test/authoritative",
+                    "upstream_key": "unknown",
                     "direct_fetch": True,
                 },
             },

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from research_harness.contracts import normalize_contract, validate_contract
+from research_harness.contracts import contract_card_sha256, normalize_contract, validate_contract
 from research_harness.providers import (
     ProviderRegistryError,
     load_provider_registry,
@@ -135,6 +135,44 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(contract["resource_envelope"]["external"]["metered_ceiling"]["transport"], 0)
         self.assertEqual(contract["resource_envelope"]["local"]["admitted_output_characters"], 12000)
         self.assertEqual(contract["resource_envelope"]["local"]["max_wall_time_seconds"], 900)
+
+    def test_pure_trigger_axes_are_required_and_validated(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract.pop("execution")
+        contract.pop("durability")
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        self.assertIn(
+            "contract execution and durability axes are required",
+            validate_contract(contract, self.registry),
+        )
+
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        self.assertEqual(validate_contract(contract, self.registry), [])
+        contract["execution"] = "fake_execution"
+        self.assertIn("contract execution axis is invalid", validate_contract(contract, self.registry))
+
+    def test_pure_trigger_axes_must_be_paired(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract["execution"] = "host_native"
+        contract.pop("durability")
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+
+        self.assertIn("contract execution and durability axes must be paired", validate_contract(contract, self.registry))
+
+    def test_pure_trigger_axes_enforce_tier_durability_semantics(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract["execution"] = "host_native"
+        contract["durability"] = "canonical_package"
+        contract["tier"] = "low"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        self.assertIn("low tier requires chat_only durability", validate_contract(contract, self.registry))
+
+        contract["tier"] = "medium"
+        contract["durability"] = "chat_only"
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        self.assertIn("medium and high tiers require canonical_package durability", validate_contract(contract, self.registry))
 
     def test_metered_subceiling_cannot_exceed_physical_ceiling(self) -> None:
         contract = copy.deepcopy(self.contract)

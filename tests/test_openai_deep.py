@@ -76,6 +76,8 @@ def _deep_contract(
     contract = {
         "posture": "lookup",
         "tier": "custom",
+        "execution": "external_managed",
+        "durability": "canonical_package",
         "scout_route": primary_scout_route,
         "resource_envelope": {
             "physical_ceiling": {

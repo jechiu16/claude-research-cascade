@@ -21,8 +21,8 @@ from research_harness.providers import (
     referenced_provider_records,
 )
 from research_harness.rendering import render_session_result
-from research_harness.state import state_sha256
-from research_harness.storage import load_state, read_events
+from research_harness.state import new_state, state_sha256
+from research_harness.storage import apply_state_patch, create_session, load_state, read_events
 from scripts import research_state
 from tests.helpers import (
     NOW,
@@ -125,6 +125,40 @@ class CliTests(unittest.TestCase):
         rendered = self.run_cli("render", str(self.session), "--json")
         self.assertTrue(json.loads(validated.stdout)["ok"])
         self.assertTrue(Path(json.loads(rendered.stdout)["report_path"]).exists())
+
+    def test_prepare_rejects_missing_contract_axes(self) -> None:
+        contract = draft_medium_contract()
+        contract.pop("execution")
+        contract.pop("durability")
+        path = self._write_json(contract, "missing-axes.json")
+        result = self.run_cli("prepare", "--contract", str(path), "--json", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("execution and durability axes are required", result.stderr + result.stdout)
+
+    def test_validate_exit_matrix_and_render_for_tier_insufficient(self) -> None:
+        deliverable = make_complete_pass_session(self.root)
+        self.assertEqual(self.run_cli("validate", str(deliverable), "--json").returncode, 0)
+
+        host_contract = confirmed_medium_contract()
+        host_contract["execution"] = "host_native"
+        host_contract["durability"] = "canonical_package"
+        host_contract["confirmation"]["card_sha256"] = contract_card_sha256(host_contract)
+        insufficient = self.root / "insufficient"
+        create_session(insufficient, new_state("host package", host_contract, NOW, None, {}))
+        result = self.run_cli("validate", str(insufficient), "--json", check=False)
+        self.assertEqual(result.returncode, 2)
+        rendered = self.run_cli("render", str(insufficient), "--json")
+        self.assertTrue(Path(json.loads(rendered.stdout)["report_path"]).exists())
+
+        invalid = make_complete_pass_session(self.root)
+        state = load_state(invalid)
+        apply_state_patch(
+            invalid,
+            [{"op": "replace", "path": "/claims/0/status", "value": "unverified"}],
+            state["session"]["revision"],
+            NOW,
+        )
+        self.assertEqual(self.run_cli("validate", str(invalid), "--json", check=False).returncode, 1)
 
     def test_attempt_records_status_transitions_for_organizer_action(self) -> None:
         self._init_session()

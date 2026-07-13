@@ -10,6 +10,7 @@ from research_harness.rendering import render_html, render_session_result
 from research_harness.state import state_sha256
 from research_harness.storage import apply_state_patch, load_state, read_events
 from research_harness.validation import validate_session
+from research_harness.validation import ValidationReport
 from tests.helpers import NOW, make_complete_pass_session
 
 
@@ -74,7 +75,9 @@ class RenderingTests(unittest.TestCase):
         document = render_html(self.state, self.report)
         self.assertIn('<html lang="zh-Hant-TW">', document)
         for label in (
-            "有界研究 / 正式狀態投影",
+            "研究報告",
+            "研究建議",
+            "研究狀態",
             "有界結論",
             "研究契約",
             "成本層級",
@@ -210,6 +213,166 @@ class RenderingTests(unittest.TestCase):
         result = render_session_result(self.session)
         self.assertFalse(result.validation.ok)
         self.assertIn("INVALID", result.path.read_text(encoding="utf-8"))
+
+    def test_non_integrity_error_still_renders_fail_closed(self) -> None:
+        session = make_complete_pass_session(self.root)
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {"op": "replace", "path": "/claims/0/status", "value": "unverified"},
+                {"op": "replace", "path": "/summary/human_recommendation", "value": "建議採用"},
+                {
+                    "op": "replace",
+                    "path": "/engineering_handoff/safe_actions",
+                    "value": [{"id": "ORIGINAL", "description": "原始行動", "reversible": True, "depends_on_claim_ids": []}],
+                },
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+
+        result = render_session_result(session)
+
+        self.assertFalse(result.validation.ok)
+        self.assertTrue(result.validation.integrity_ok)
+        document = result.path.read_text(encoding="utf-8")
+        first_screen = document.split('<details class="kernel-details">', 1)[0]
+        self.assertIn("驗證未通過，暫不作建議", first_screen)
+        self.assertIn("驗證未通過", first_screen)
+        self.assertNotIn("建議採用", first_screen)
+        self.assertNotIn("Use the bounded reversible implementation.", first_screen)
+        self.assertNotIn("The bounded finding applies to this decision.", first_screen)
+        self.assertNotIn("ORIGINAL", first_screen)
+        self.assertIn("報告驗證失敗，請勿依此行動", first_screen)
+        self.assertIn("修正驗證問題後重新產生報告", first_screen)
+        self.assertNotIn("INVALID", first_screen)
+        self.assertLess(document.index("技術細節"), document.index("INVALID"))
+
+    def test_tier_shortfall_keeps_provisional_human_content_and_fallbacks(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["summary"]["decision"] = "暫定結論"
+        state["claims"][0]["text"] = "暫定主張"
+        state["sources"][0].update(
+            {
+                "title": "Validated Source",
+                "url": "https://example.test/validated",
+                "canonical_source_key": "https://example.test/validated",
+                "upstream_key": "unknown",
+            }
+        )
+        report = ValidationReport((), state_sha256(state), True, False, "建議採用", "")
+        document = render_html(state, report)
+        first_screen = document.split('<details class="kernel-details">', 1)[0]
+
+        self.assertIn("暫定結論", first_screen)
+        self.assertIn("暫定主張", first_screen)
+        self.assertIn("尚缺足夠的直接來源，結論可能改變", first_screen)
+        self.assertIn("補上一個可直接查核的來源後再評估", first_screen)
+        self.assertIn("證據不足", first_screen)
+        self.assertNotIn("完整性檢查", first_screen)
+
+    def test_human_reasons_use_at_most_three_validated_sources_and_disclose_upstream(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["claims"][0]["supporting_evidence_ids"] = []
+        state["sources"] = []
+        state["evidence"] = []
+        for index, upstream in enumerate(("same", "different", "unknown"), start=1):
+            source_id = f"S{index}"
+            evidence_id = f"E{index}"
+            state["sources"].append(
+                {
+                    "id": source_id,
+                    "origin_id": "O1",
+                    "title": f"Validated Source {index}",
+                    "url": f"https://example.test/source-{index}",
+                    "canonical_source_key": f"https://example.test/source-{index}",
+                    "upstream_key": upstream,
+                }
+            )
+            state["evidence"].append({"id": evidence_id, "source_id": source_id})
+            state["claims"][0]["supporting_evidence_ids"].append(evidence_id)
+        report = ValidationReport((), state_sha256(state), True, True, "", "")
+        first_screen = render_html(state, report).split('<details class="kernel-details">', 1)[0]
+
+        self.assertIn("Validated Source 1", first_screen)
+        self.assertIn("Validated Source 3", first_screen)
+        self.assertNotIn("Validated Source 4", first_screen)
+        self.assertIn("上游關係：</strong>未知", first_screen)
+
+    def test_fourth_only_valid_reason_is_rendered(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["claims"] = []
+        state["sources"] = []
+        state["evidence"] = []
+        claim_ids = []
+        for index in range(1, 5):
+            claim_id = f"C{index}"
+            evidence_id = f"E{index}"
+            source_id = f"S{index}"
+            claim_ids.append(claim_id)
+            state["claims"].append(
+                {"id": claim_id, "load_bearing": True, "text": f"Claim {index}", "supporting_evidence_ids": [evidence_id]}
+            )
+            state["evidence"].append({"id": evidence_id, "source_id": source_id})
+            state["sources"].append(
+                {
+                    "id": source_id,
+                    "origin_id": "O1",
+                    "title": f"Source {index}" if index == 4 else "",
+                    "url": f"https://example.test/source-{index}" if index == 4 else "ftp://example.test/source",
+                    "canonical_source_key": f"https://example.test/source-{index}" if index == 4 else "",
+                    "upstream_key": "unknown",
+                }
+            )
+        state["summary"]["load_bearing_claim_ids"] = claim_ids
+        report = ValidationReport((), state_sha256(state), True, True, "", "")
+        first_screen = render_html(state, report).split('<details class="kernel-details">', 1)[0]
+
+        self.assertNotIn("Claim 1", first_screen)
+        self.assertNotIn("Claim 2", first_screen)
+        self.assertNotIn("Claim 3", first_screen)
+        self.assertIn("Claim 4", first_screen)
+        self.assertIn("Source 4", first_screen)
+
+    def test_public_report_does_not_expose_host_accounting_projection(self) -> None:
+        report = validate_session(self.session)
+        document = render_html(self.state, report)
+
+        self.assertNotIn("host_native_accounting", report.to_dict())
+        self.assertNotIn("host_native_accounting", document)
+
+    def test_first_screen_hides_raw_status_and_posture_in_kernel_details(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["summary"]["status"] = "PASS"
+        state["contract"]["posture"] = "decision"
+        document = render_html(state, self.report)
+        header = document.split("<header>", 1)[1].split("</header>", 1)[0]
+
+        self.assertIn(self.state["framing"]["question"], header)
+        self.assertIn(">medium<", header)
+        self.assertNotIn("PASS", header)
+        self.assertNotIn("decision", header)
+        self.assertLess(document.index("技術細節"), document.index("PASS"))
+
+    def test_first_screen_shows_all_limitations_and_only_first_reversible_action(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["engineering_handoff"]["constraints"] = ["constraint one"]
+        state["open_questions"] = ["open question"]
+        state["claims"][0]["would_change_if"] = "flip condition"
+        state["engineering_handoff"]["safe_actions"] = [
+            {"id": "UNSAFE", "description": "unsafe", "reversible": False, "depends_on_claim_ids": []},
+            {"id": "SAFE1", "description": "first safe", "reversible": True, "depends_on_claim_ids": []},
+            {"id": "SAFE2", "description": "second safe", "reversible": True, "depends_on_claim_ids": []},
+        ]
+        document = render_html(state, ValidationReport((), state_sha256(state), True, True, "", ""))
+        first_screen = document.split('<details class="kernel-details">', 1)[0]
+
+        for value in ("constraint one", "open question", "flip condition", "SAFE1"):
+            self.assertIn(value, first_screen)
+        self.assertNotIn("UNSAFE", first_screen)
+        self.assertNotIn("SAFE2", first_screen)
+        self.assertIn("SAFE2", document)
 
 
 if __name__ == "__main__":

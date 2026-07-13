@@ -10,7 +10,7 @@ import stat
 from pathlib import Path
 from typing import Any, Optional
 
-from ._canon import RETENTION_RANK, sha256_hex
+from ._canon import RETENTION_RANK, canonical_source_key, normalize_upstream_key, sha256_hex
 from .quota import ACTION_ID_RE
 from .storage import (
     _apply_artifact_state_patch_unlocked,
@@ -25,6 +25,7 @@ from .storage import (
 
 ARTIFACT_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 MEDIA_EXTENSIONS = {
+    "application/octet-stream": ".bin",
     "application/json": ".json",
     "application/pdf": ".pdf",
     "application/xml": ".xml",
@@ -219,9 +220,33 @@ def _copy_fd_to_temp(fd: int, temp_path: Path, byte_limit: int) -> tuple[int, st
     return byte_count, digest.hexdigest()
 
 
+def _copy_bytes_to_temp(payload: bytes, temp_path: Path, byte_limit: int) -> tuple[int, str]:
+    """Write host-returned bytes without turning them into a local action."""
+
+    if not isinstance(payload, bytes):
+        raise ArtifactPolicyError("host capture payload must be bytes")
+    if len(payload) > byte_limit:
+        raise ArtifactPolicyError("raw storage byte ceiling would be exceeded")
+    if _contains_secret_marker(payload):
+        raise SecretDetected("content matches the deterministic secret rejection floor")
+    try:
+        out_fd = os.open(temp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise ArtifactExists("artifact staging path already exists") from exc
+    try:
+        _write_all(out_fd, payload)
+        os.fsync(out_fd)
+    except BaseException:
+        os.close(out_fd)
+        temp_path.unlink(missing_ok=True)
+        raise
+    os.close(out_fd)
+    return len(payload), hashlib.sha256(payload).hexdigest()
+
+
 def _ingest_unlocked(
     session_dir: Path,
-    source_path: Path,
+    source_path: Optional[Path],
     artifact_id: str,
     media_type: str,
     sensitivity: str,
@@ -231,6 +256,8 @@ def _ingest_unlocked(
     now: str,
     redaction_review: Optional[dict[str, Any]],
     policy_extra: Optional[dict[str, Any]] = None,
+    source_bytes: Optional[bytes] = None,
+    host_capture: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     extension, include_in_html, review = _validate_common_request(
         artifact_id,
@@ -251,18 +278,23 @@ def _ingest_unlocked(
     if destination.exists() or destination.is_symlink() or temp_path.exists() or temp_path.is_symlink():
         raise ArtifactExists(f"artifact storage for {artifact_id} already exists")
 
-    fd, source_metadata = _open_regular_source(source_path)
-    try:
-        ceiling = state["contract"]["resource_envelope"]["external"]["raw_storage_bytes"]
-        if not isinstance(ceiling, int) or isinstance(ceiling, bool) or ceiling < 0:
-            raise ArtifactPolicyError("raw storage byte ceiling is invalid")
-        remaining = ceiling - _raw_bytes_used(raw_dir)
-        if source_metadata.st_size > remaining:
-            raise ArtifactPolicyError("raw storage byte ceiling would be exceeded")
-        _scan_fd(fd)
-        byte_count, digest = _copy_fd_to_temp(fd, temp_path, remaining)
-    finally:
-        os.close(fd)
+    ceiling = state["contract"]["resource_envelope"]["external"]["raw_storage_bytes"]
+    if not isinstance(ceiling, int) or isinstance(ceiling, bool) or ceiling < 0:
+        raise ArtifactPolicyError("raw storage byte ceiling is invalid")
+    remaining = ceiling - _raw_bytes_used(raw_dir)
+    if source_bytes is not None:
+        byte_count, digest = _copy_bytes_to_temp(source_bytes, temp_path, remaining)
+    else:
+        if source_path is None:
+            raise ArtifactPolicyError("artifact source is required")
+        fd, source_metadata = _open_regular_source(source_path)
+        try:
+            if source_metadata.st_size > remaining:
+                raise ArtifactPolicyError("raw storage byte ceiling would be exceeded")
+            _scan_fd(fd)
+            byte_count, digest = _copy_fd_to_temp(fd, temp_path, remaining)
+        finally:
+            os.close(fd)
 
     policy_snapshot = {
         "artifact_policy": copy.deepcopy(state["contract"].get("artifact_policy", {})),
@@ -289,6 +321,8 @@ def _ingest_unlocked(
     }
     if review is not None:
         artifact["redaction_review"] = review
+    if host_capture is not None:
+        artifact["host_capture"] = copy.deepcopy(host_capture)
 
     try:
         if destination.exists() or destination.is_symlink():
@@ -360,6 +394,85 @@ def ingest_local_artifact(
             provenance,
             now,
             redaction_review,
+        )
+
+
+def ingest_host_capture(
+    session_dir: Path,
+    artifact_id: str,
+    source_url: str,
+    source_title: str,
+    upstream_key: str,
+    payload: bytes,
+    fidelity: str,
+    captured_at: str,
+    marginal_purpose: str,
+    *,
+    media_type: str = "application/octet-stream",
+    sensitivity: str = "public",
+    retention: str = "session",
+    include_in_html: bool = True,
+) -> dict[str, Any]:
+    """Persist exact bytes returned by the host without a transaction permit.
+
+    A host capture is an observation of the host tool's output, not a request
+    sent by this repository. Its metadata is deliberately explicit about
+    fidelity so host-rendered text cannot be mistaken for raw HTTP bytes.
+    """
+
+    session_dir = Path(session_dir)
+    source_url = _require_nonempty(source_url, "source_url")
+    source_title = _require_nonempty(source_title, "source_title")
+    upstream_key = _require_nonempty(upstream_key, "upstream_key")
+    try:
+        source_key = canonical_source_key(source_url)
+    except ValueError as exc:
+        raise ArtifactPolicyError(str(exc)) from exc
+    try:
+        upstream_key = normalize_upstream_key(upstream_key)
+    except ValueError as exc:
+        raise ArtifactPolicyError(str(exc)) from exc
+    purpose = _require_nonempty(marginal_purpose, "marginal_purpose")
+    _require_nonempty(captured_at, "captured_at")
+    if fidelity not in {"raw_http", "host_rendered"}:
+        raise ArtifactPolicyError("host capture fidelity must be raw_http or host_rendered")
+    if not isinstance(payload, bytes):
+        raise ArtifactPolicyError("host capture payload must be bytes")
+
+    with session_lock(session_dir):
+        _recover_session_unlocked(session_dir)
+        state = _load_state_unlocked(session_dir)
+        contract = state.get("contract", {})
+        if (
+            contract.get("execution") != "host_native"
+            or contract.get("durability") != "canonical_package"
+            or contract.get("tier") not in {"medium", "high"}
+        ):
+            raise ArtifactPolicyError(
+                "host captures require a host-native canonical-package Medium or High contract"
+            )
+        return _ingest_unlocked(
+            session_dir,
+            None,
+            artifact_id,
+            media_type,
+            sensitivity,
+            retention,
+            include_in_html,
+            {"origin_kind": "host_capture"},
+            captured_at,
+            None,
+            {"host_capture": True},
+            source_bytes=payload,
+            host_capture={
+                "source_url": source_url,
+                "source_title": source_title,
+                "canonical_source_key": source_key,
+                "upstream_key": upstream_key,
+                "fidelity": fidelity,
+                "captured_at": captured_at,
+                "marginal_purpose": purpose,
+            },
         )
 
 

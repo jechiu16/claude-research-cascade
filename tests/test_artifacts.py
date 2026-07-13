@@ -595,6 +595,8 @@ class PromoteProviderPayloadTests(unittest.TestCase):
             {
                 "posture": "lookup",
                 "tier": "custom",
+                "execution": "external_managed",
+                "durability": "canonical_package",
                 "scout_route": "demo-probe",
                 "resource_envelope": {
                     "physical_ceiling": {

@@ -18,6 +18,8 @@ from .providers import (
 
 POSTURES = frozenset({"lookup", "synthesis", "scientific", "decision"})
 TIERS = frozenset({"low", "medium", "high", "custom"})
+EXECUTIONS = frozenset({"host_native", "external_managed"})
+DURABILITIES = frozenset({"chat_only", "canonical_package"})
 ACTION_CATEGORIES = (
     "probe",
     "deep",
@@ -244,12 +246,29 @@ def _validate_contract_core(
     contract: dict[str, Any],
     registry: dict[str, Any],
     resolved_registry_sha256: str,
+    *,
+    allow_legacy_axes: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     if contract.get("posture") not in POSTURES:
         errors.append("contract posture is invalid")
     if contract.get("tier") not in TIERS:
         errors.append("contract tier is invalid")
+    has_execution = "execution" in contract
+    has_durability = "durability" in contract
+    if has_execution != has_durability:
+        errors.append("contract execution and durability axes must be paired")
+    elif not has_execution and not allow_legacy_axes:
+        errors.append("contract execution and durability axes are required")
+    elif has_execution:
+        if contract.get("execution") not in EXECUTIONS:
+            errors.append("contract execution axis is invalid")
+        if contract.get("durability") not in DURABILITIES:
+            errors.append("contract durability axis is invalid")
+        elif contract.get("tier") == "low" and contract.get("durability") != "chat_only":
+            errors.append("low tier requires chat_only durability")
+        elif contract.get("tier") in {"medium", "high"} and contract.get("durability") != "canonical_package":
+            errors.append("medium and high tiers require canonical_package durability")
     _confirmation_errors(contract, registry, resolved_registry_sha256, errors)
 
     resource = contract.get("resource_envelope")
@@ -283,3 +302,27 @@ def validate_contract(
         return registry_errors
     registry_hash = resolved_registry_sha256 or provider_registry_sha256(resolved)
     return _validate_contract_core(normalized, resolved, registry_hash)
+
+
+def _validate_persisted_contract(
+    contract: dict[str, Any],
+    registry: dict[str, Any],
+    *,
+    resolved_registry_sha256: Optional[str] = None,
+) -> list[str]:
+    """Validate an already-persisted contract while accepting legacy axes."""
+
+    if not isinstance(contract, dict):
+        return ["contract must be an object"]
+    normalized = normalize_contract(contract)
+    resolved = copy.deepcopy(registry)
+    registry_errors = validate_provider_registry(resolved)
+    if registry_errors:
+        return registry_errors
+    registry_hash = resolved_registry_sha256 or provider_registry_sha256(resolved)
+    return _validate_contract_core(
+        normalized,
+        resolved,
+        registry_hash,
+        allow_legacy_axes=True,
+    )

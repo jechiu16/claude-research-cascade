@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 
 RETENTION_RANK = {"forbidden": 0, "ephemeral": 1, "session": 2, "persistent": 3}
@@ -51,3 +52,46 @@ def indexed(items: Any) -> dict[str, dict[str, Any]]:
         for item in items
         if isinstance(item, dict) and isinstance(item.get("id"), str)
     }
+
+
+def canonical_source_key(source_url: str) -> str:
+    """Return the one safe identity form for an HTTP(S) source URL."""
+
+    if not isinstance(source_url, str) or not source_url or source_url != source_url.strip():
+        raise ValueError("source URL must be a non-empty, trimmed string")
+    if any(ord(character) < 32 for character in source_url):
+        raise ValueError("source URL contains control characters")
+    try:
+        parsed = urlsplit(source_url)
+        scheme = parsed.scheme.lower()
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("source URL is malformed") from exc
+    if scheme not in {"http", "https"} or not parsed.netloc or not hostname:
+        raise ValueError("source URL must use HTTP or HTTPS")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("source URL must not contain credentials")
+    host = hostname.lower()
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    default_port = 80 if scheme == "http" else 443
+    netloc = host if port is None or port == default_port else f"{host}:{port}"
+    return urlunsplit((scheme, netloc, parsed.path or "/", parsed.query, ""))
+
+
+def normalize_upstream_key(value: str) -> str:
+    """Normalize upstream identity once before it enters canonical state."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("upstream key must be a non-empty string")
+    cleaned = value.strip()
+    if cleaned.casefold() == "unknown":
+        return "unknown"
+    try:
+        parsed = urlsplit(cleaned)
+    except ValueError:
+        parsed = None
+    if parsed is not None and parsed.scheme.lower() in {"http", "https"}:
+        return canonical_source_key(cleaned)
+    return cleaned.casefold()

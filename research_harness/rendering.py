@@ -17,7 +17,7 @@ from .storage import (
     _recover_session_unlocked,
     session_lock,
 )
-from .validation import ValidationReport, _validate_loaded_session
+from .validation import ValidationReport, _renderable_human_reasons, _validate_loaded_session
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,30 @@ def _text_list(values: Any, empty_label: str = "尚未記錄") -> str:
     if not isinstance(values, list) or not values:
         return _empty(empty_label)
     return "<ul>" + "".join(f"<li>{_escape(value)}</li>" for value in values) + "</ul>"
+
+
+def _render_safe_action(action: dict[str, Any]) -> str:
+    return (
+        '<article class="safe-action">'
+        f'<h3>{_escape(action.get("id"))}: {_escape(action.get("description", "安全行動"))}</h3>'
+        f'<p>可逆：{_boolean_label(action.get("reversible"))}</p>'
+        f'<p>依賴主張：{_escape(", ".join(action.get("depends_on_claim_ids", [])) or "無")}</p>'
+        "</article>"
+    )
+
+
+def _human_limitations(state: dict[str, Any], insufficient: bool = False) -> str:
+    handoff = state.get("engineering_handoff", {})
+    values = list(handoff.get("constraints", []))
+    values.extend(state.get("open_questions", []))
+    values.extend(
+        claim.get("would_change_if")
+        for claim in state.get("claims", [])
+        if isinstance(claim, dict) and claim.get("would_change_if")
+    )
+    if insufficient:
+        values.append("尚缺足夠的直接來源，結論可能改變")
+    return _text_list(values, "尚未記錄限制或翻轉條件")
 
 
 def _artifact_link(artifact: dict[str, Any] | None) -> str:
@@ -187,31 +211,100 @@ def _render_validation(report: ValidationReport) -> str:
     ) + "</ul>"
 
 
+def _render_human_reasons(state: dict[str, Any]) -> str:
+    reasons: list[str] = []
+    linked_sources: list[dict[str, Any]] = []
+    for claim, sources in _renderable_human_reasons(state)[:3]:
+        links: list[str] = []
+        for source in sources:
+            url = source["url"]
+            title = source["title"]
+            linked_sources.append(source)
+            links.append(f'<a href="{_escape(url)}">{_escape(title)}</a>')
+        suffix = "（" + "、".join(links) + "）" if links else ""
+        reasons.append(f"<li>{_escape(claim.get('text', '未命名主張'))}{suffix}</li>")
+    if not reasons:
+        return _empty("尚未記錄核心理由")
+    upstream_keys = {source.get("upstream_key") for source in linked_sources}
+    if not upstream_keys or "unknown" in upstream_keys:
+        upstream_label = "未知"
+    elif len(upstream_keys) == 1:
+        upstream_label = "相同"
+    else:
+        upstream_label = "不同"
+    return (
+        "<ul class=\"reason-list\">"
+        + "".join(reasons)
+        + "</ul><p><strong>上游關係：</strong>"
+        + upstream_label
+        + "</p>"
+    )
+
+
 def render_html(state: dict[str, Any], report: ValidationReport) -> str:
     """Render one state snapshot without reading clocks, files, or the network."""
 
     canonical_hash = state_sha256(state)
-    valid = report.ok and report.state_sha256 == canonical_hash
+    valid = not report.errors and report.state_sha256 == canonical_hash
     summary = state.get("summary", {})
     contract = state.get("contract", {})
     status = summary.get("status", "未記錄狀態")
     display_status = str(status) if valid else f"{status} / INVALID"
     status_class = "pass" if valid and status == "PASS" else "invalid" if not valid else "partial"
+    recommendation = report.human_recommendation or summary.get("human_recommendation") or "尚未記錄建議"
+    human_status = report.human_status or summary.get("human_status") or "尚未記錄研究判斷"
+    if not valid:
+        human_status = "驗證未通過"
+        recommendation = "驗證未通過，暫不作建議"
+    elif not report.tier_contract_met:
+        human_status = "證據不足"
+        recommendation = "證據不足，暫不作肯定建議"
     ceilings = contract.get("resource_envelope", {}).get("physical_ceiling", {})
     quota_rows = "".join(
         f'<tr><td>{_escape(category)}</td><td>{_escape(count)}</td></tr>'
         for category, count in sorted(ceilings.items())
     )
     safe_actions = state.get("engineering_handoff", {}).get("safe_actions", [])
-    safe_action_html = _empty("尚未記錄安全行動") if not safe_actions else "".join(
-        '<article class="safe-action">'
-        f'<h3>{_escape(action.get("id"))}: {_escape(action.get("description", "安全行動"))}</h3>'
-        f'<p>可逆：{_boolean_label(action.get("reversible"))}</p>'
-        f'<p>依賴主張：{_escape(", ".join(action.get("depends_on_claim_ids", [])) or "無")}</p>'
-        "</article>"
-        for action in safe_actions
-        if isinstance(action, dict)
+    safe_action_records = [action for action in safe_actions if isinstance(action, dict)]
+    safe_action_html = (
+        _empty("尚未記錄安全行動")
+        if not safe_action_records
+        else "".join(_render_safe_action(action) for action in safe_action_records)
     )
+    first_reversible_action = next(
+        (action for action in safe_action_records if action.get("reversible") is True), None
+    )
+    first_safe_action_html = (
+        _render_safe_action(first_reversible_action)
+        if first_reversible_action is not None
+        else _empty("尚未記錄可逆安全行動")
+    )
+    if not valid:
+        failure_summary = (
+            f"報告包含 {len(report.errors)} 個驗證錯誤；詳細原因請展開技術細節。"
+            if report.errors
+            else "報告與目前狀態的完整性綁定失效；詳細原因請展開技術細節。"
+        )
+        human_first_html = f'''<section class="human-first"><div class="eyebrow">安全提示</div>
+      <h2>報告驗證失敗，請勿依此行動</h2>
+      <p><strong>研究狀態:</strong> 驗證未通過</p>
+      <p><strong>建議:</strong> 驗證未通過，暫不作建議</p>
+      <p class="decision-text">{_escape(failure_summary)}</p>
+      <h3>安全下一步</h3><p>修正驗證問題後重新產生報告</p></section>'''
+    else:
+        fallback_action = (
+            '<article class="safe-action"><h3>補上一個可直接查核的來源後再評估</h3>'
+            '<p>可逆：是</p></article>'
+            if not report.tier_contract_met
+            else first_safe_action_html
+        )
+        human_first_html = f'''<section class="human-first"><div class="eyebrow">研究建議</div><h2>{_escape(recommendation)}</h2>
+      <p><strong>研究狀態:</strong> {_escape(human_status)}</p>
+      <div class="decision"><div class="eyebrow">有界結論</div><h3>結論</h3>
+      <p class="decision-text">{_escape(summary.get("decision", "尚未記錄結論"))}</p>
+      </div><h3>核心理由</h3>{_render_human_reasons(state)}
+      <h3>限制與翻轉條件</h3>{_human_limitations(state, not report.tier_contract_met)}
+      <h3>下一步</h3>{fallback_action}</section>'''
 
     return f"""<!doctype html>
 <html lang="zh-Hant-TW">
@@ -246,6 +339,10 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
       padding:clamp(22px,4vw,44px); box-shadow:0 14px 38px #4e46351a; }}
     .decision {{ border-left:8px solid var(--accent); }}
     .decision-text {{ font-size:clamp(1.35rem,2.6vw,2rem); max-width:38ch; }}
+    .human-first {{ border-left:8px solid var(--forest); }}
+    .human-first h2 {{ font-size:clamp(1.8rem,4vw,3.2rem); }}
+    .reason-list {{ padding-left:1.2rem; }} .reason-list li {{ margin:.55rem 0; }}
+    .kernel-details {{ margin-top:4px; }}
     .meta-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }}
     .meta-card,.verification,.safe-action {{ background:#f6f0e1; border:1px solid var(--line); padding:15px; }}
     .claim {{ padding:22px 0; border-top:1px solid var(--line); }} .claim:first-child {{ border-top:0; }}
@@ -275,16 +372,18 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
 </head>
 <body>
   <header>
-    <div class="eyebrow">有界研究 / 正式狀態投影</div>
+    <div class="eyebrow">研究報告</div>
     <h1>{_escape(state.get("framing", {}).get("question", "研究結果"))}</h1>
-    <div class="status-line"><span class="verdict {status_class}">{_escape(display_status)}</span>
-      {_pill(contract.get("tier", "未記錄成本層級"), "status")}{_pill(contract.get("posture", "未記錄研究模式"), "status")}</div>
-    <p class="hash">state sha256 {canonical_hash}</p>
+    <div class="status-line">{_pill(contract.get("tier", "未記錄成本層級"), "status")}</div>
   </header>
   <main>
+    {human_first_html}
+    <details class="kernel-details"><summary>技術細節</summary>
     <section class="decision"><div class="eyebrow">有界結論</div><h2>結論</h2>
       <p class="decision-text">{_escape(summary.get("decision", "尚未記錄結論"))}</p>
-      <p><strong>更新時間:</strong> {_escape(state.get("session", {}).get("updated_at"))}</p></section>
+      <p><strong>更新時間:</strong> {_escape(state.get("session", {}).get("updated_at"))}</p>
+      <p><strong>status:</strong> <span class="verdict {status_class}">{_escape(display_status)}</span></p>
+      <p><strong>posture:</strong> {_escape(contract.get("posture", "未記錄研究模式"))}</p></section>
     <section><h2>研究契約</h2><div class="meta-grid">
       <div class="meta-card"><strong>成本層級</strong><br>{_escape(contract.get("tier"))}</div>
       <div class="meta-card"><strong>研究模式</strong><br>{_escape(contract.get("posture"))}</div>
@@ -299,7 +398,12 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
       <h3>限制條件</h3>{_text_list(state.get("engineering_handoff", {}).get("constraints", []))}
       <h3>驗收測試</h3>{_text_list(state.get("engineering_handoff", {}).get("acceptance_tests", []))}</section>
     <section><h2>待釐清問題</h2>{_text_list(state.get("open_questions", []))}</section>
-    <section><h2>決定性檢查結果</h2>{_render_validation(report)}</section>
+    <section><h2>決定性檢查結果</h2>
+      <p><strong>integrity_ok:</strong> {_boolean_label(report.integrity_ok)}</p>
+      <p><strong>tier_contract_met:</strong> {_boolean_label(report.tier_contract_met)}</p>
+      <p><strong>human_recommendation:</strong> {_escape(recommendation)}</p>
+      {_render_validation(report)}</section>
+    <p class="hash">state sha256 {canonical_hash}</p></details>
     <footer>本報告只從唯一正式 JSON 狀態決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。</footer>
   </main>
 </body>
