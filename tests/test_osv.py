@@ -248,3 +248,17 @@ class OsvBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OsvIdlessVulnTests(unittest.TestCase):
+    def test_vuln_without_id_yields_no_fabricated_citation(self) -> None:
+        import json as _json
+
+        from research_harness.adapters import osv as osv_adapter
+
+        payload = _json.dumps(
+            {"vulns": [{"summary": "record with no id", "modified": "2026-01-01"}]}
+        ).encode("utf-8")
+        result = osv_adapter.parse(payload)
+        self.assertEqual(result.citations, [])
+        self.assertNotIn("None", " ".join(c.get("url", "") for c in result.citations))

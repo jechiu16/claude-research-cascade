@@ -66,13 +66,16 @@ def parse(payload: bytes) -> ParsedResult:
         modified = vuln.get("modified")
         excerpt = summary[:SUMMARY_EXCERPT_LIMIT] if summary else ""
 
-        citations.append(
-            {
-                "url": f"https://osv.dev/vulnerability/{vuln_id}",
-                "title": f"{vuln_id}: {summary}" if summary else vuln_id,
-                "date": modified,
-            }
-        )
+        # A record without a string id has no resolvable URL — drop the
+        # citation (repo convention) instead of fabricating .../None.
+        if isinstance(vuln_id, str) and vuln_id:
+            citations.append(
+                {
+                    "url": f"https://osv.dev/vulnerability/{vuln_id}",
+                    "title": f"{vuln_id}: {summary}" if summary else vuln_id,
+                    "date": modified,
+                }
+            )
         parts = [str(vuln_id)]
         if excerpt:
             parts.append(excerpt)
