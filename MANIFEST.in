@@ -10,3 +10,4 @@ recursive-include .agents *.md
 recursive-include .claude *.md
 recursive-include docs *.md
 recursive-include examples/v2 *.json *.md
+recursive-include examples/paired *.md

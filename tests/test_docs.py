@@ -328,7 +328,14 @@ class DocumentationTests(unittest.TestCase):
                 self.assertIn("name: deep", wrapper)
 
         manifest = self.read("MANIFEST.in")
-        for required in ("SKILL.md", "AGENTS.md", "HARNESS.md", ".claude", ".agents"):
+        for required in (
+            "SKILL.md",
+            "AGENTS.md",
+            "HARNESS.md",
+            ".claude",
+            ".agents",
+            "examples/paired",
+        ):
             with self.subTest(path=required):
                 self.assertIn(required, manifest)
 
