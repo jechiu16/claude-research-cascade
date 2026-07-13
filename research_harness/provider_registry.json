@@ -4,6 +4,7 @@
     "adapter": "unbound",
     "adapter_version": "unbound",
     "enabled": false,
+    "cost_class": "unclassified",
     "roles": [
       "candidate"
     ],
@@ -64,6 +65,7 @@
   "providers": [
     {
       "id": "host-web",
+      "cost_class": "free",
       "adapter": "host-native",
       "adapter_version": "observed-v1",
       "enabled": true,
@@ -114,6 +116,7 @@
     },
     {
       "id": "local",
+      "cost_class": "free",
       "adapter": "local-inspection",
       "adapter_version": "v1",
       "enabled": true,
@@ -163,6 +166,7 @@
     },
     {
       "id": "host",
+      "cost_class": "free",
       "adapter": "host-organizer",
       "adapter_version": "observed-v1",
       "enabled": true,
@@ -210,6 +214,7 @@
     },
     {
       "id": "demo-probe",
+      "cost_class": "free",
       "adapter": "demo-no-network",
       "adapter_version": "v1",
       "enabled": true,
@@ -252,6 +257,7 @@
     },
     {
       "id": "demo-cascade",
+      "cost_class": "free",
       "adapter": "demo-no-network",
       "adapter_version": "v1",
       "enabled": true,
@@ -294,6 +300,7 @@
     },
     {
       "id": "sonar",
+      "cost_class": "search",
       "adapter": "perplexity-chat-completions",
       "adapter_version": "v1",
       "enabled": true,
@@ -365,6 +372,7 @@
     },
     {
       "id": "scholar",
+      "cost_class": "free",
       "adapter": "semantic-scholar-graph-search",
       "adapter_version": "v1",
       "enabled": true,
@@ -433,6 +441,8 @@
     },
     {
       "id": "perplexity",
+      "cost_class": "deep",
+      "cost_rank": 1,
       "adapter": "perplexity-async-sonar",
       "adapter_version": "v1",
       "enabled": true,
@@ -504,6 +514,8 @@
     },
     {
       "id": "openai-deep",
+      "cost_class": "deep",
+      "cost_rank": 3,
       "adapter": "openai-deep-responses",
       "adapter_version": "v1",
       "execution_binding": "v2_request_boundary",
@@ -575,6 +587,8 @@
     },
     {
       "id": "gemini-deep",
+      "cost_class": "deep",
+      "cost_rank": 2,
       "adapter": "gemini-interactions-deep",
       "adapter_version": "v1",
       "enabled": true,
@@ -650,6 +664,7 @@
     },
     {
       "id": "brave",
+      "cost_class": "search",
       "adapter": "brave-web-search",
       "adapter_version": "v1",
       "enabled": true,
@@ -720,6 +735,7 @@
     },
     {
       "id": "openalex",
+      "cost_class": "search",
       "adapter": "openalex-works-search",
       "adapter_version": "v1",
       "enabled": true,
@@ -788,6 +804,7 @@
     },
     {
       "id": "crossref",
+      "cost_class": "free",
       "adapter": "crossref-works-search",
       "adapter_version": "v1",
       "enabled": true,
@@ -854,6 +871,7 @@
     },
     {
       "id": "europe-pmc",
+      "cost_class": "free",
       "adapter": "europepmc-rest-search",
       "adapter_version": "v1",
       "enabled": true,
@@ -920,6 +938,7 @@
     },
     {
       "id": "exa",
+      "cost_class": "search",
       "adapter": "exa-search",
       "adapter_version": "v1",
       "enabled": true,
@@ -992,6 +1011,7 @@
     },
     {
       "id": "github",
+      "cost_class": "free",
       "adapter": "github-repos-record",
       "adapter_version": "v1",
       "enabled": true,
@@ -1057,6 +1077,7 @@
     },
     {
       "id": "pypi",
+      "cost_class": "free",
       "adapter": "pypi-package-record",
       "adapter_version": "v1",
       "enabled": true,
@@ -1122,6 +1143,7 @@
     },
     {
       "id": "osv",
+      "cost_class": "free",
       "adapter": "osv-query",
       "adapter_version": "v1",
       "enabled": true,
@@ -1187,6 +1209,7 @@
     },
     {
       "id": "nvd",
+      "cost_class": "free",
       "adapter": "nvd-cve-record",
       "adapter_version": "v1",
       "enabled": true,
@@ -1252,6 +1275,7 @@
     },
     {
       "id": "ietf",
+      "cost_class": "free",
       "adapter": "rfc-editor-record",
       "adapter_version": "v1",
       "enabled": true,

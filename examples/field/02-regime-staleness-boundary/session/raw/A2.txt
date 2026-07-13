@@ -1,0 +1,7 @@
+        # §8.13 regime_history health surface: the historian_analogue_snapshot
+        # match pool (union live Parquet + regime_history → find_similar_states →
+        # DuckDB persist) was retired 2026-07-05 with the brief lineage叢
+        # (ORPH-01) — its only reader (brief.upstream) is gone.  The
+        # regime_history load survives here purely for its degraded-subsystem
+        # signal (Codex review 2026-04-28 C1-3): a missing/broken regime_history
+        # table must still leave an operator-visible trail in the run record.

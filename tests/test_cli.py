@@ -129,11 +129,32 @@ class CliTests(unittest.TestCase):
         self.assertEqual(state["summary"]["human_status"], "交付不完整")
         self.assertIn("BLOCKED / DELIVERY_INCOMPLETE", report_path.read_text(encoding="utf-8"))
 
-    def test_v2_example_init_smoke_creates_session_and_validates(self) -> None:
+    def test_v2_example_prepare_confirm_init_smoke(self) -> None:
         session = self.root / "v2-example-session"
-        example = self.repo / "examples" / "v2" / "medium-contract.json"
+        example = self.repo / "examples" / "v2" / "light-contract.json"
+        prepared = json.loads(
+            self.run_cli("prepare", "--contract", str(example), "--json").stdout
+        )
+        prepared_path = self._write_json(prepared, "example-prepared.json")
+        confirmed = self.run_cli(
+            "confirm",
+            "--prepared",
+            str(prepared_path),
+            "--card-sha256",
+            prepared["binding"]["card_sha256"],
+            "--registry-sha256",
+            prepared["binding"]["registry_sha256"],
+            "--referenced-records-sha256",
+            prepared["binding"]["referenced_records_sha256"],
+            "--confirmed-at",
+            NOW,
+            "--confirmed-by",
+            "user",
+            "--json",
+        )
+        confirmed_path = self._write_json(json.loads(confirmed.stdout), "example-confirmed.json")
         initialized = self.run_cli(
-            "init", str(session), "--contract", str(example), "--json", check=False
+            "init", str(session), "--contract", str(confirmed_path), "--json", check=False
         )
         self.assertEqual(initialized.returncode, 0, initialized.stderr)
         self.assertTrue((session / "state.json").exists())
@@ -149,9 +170,9 @@ class CliTests(unittest.TestCase):
         report_path = Path(json.loads(rendered.stdout)["report_path"])
         state = load_state(session)
         self.assertEqual(state["summary"]["status"], "BLOCKED")
-        self.assertEqual(state["summary"]["human_status"], "證據不足")
+        self.assertEqual(state["summary"]["human_status"], "交付不完整")
         self.assertIn(
-            "BLOCKED / EVIDENCE_INSUFFICIENT",
+            "BLOCKED / DELIVERY_INCOMPLETE",
             report_path.read_text(encoding="utf-8"),
         )
 
@@ -875,6 +896,50 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("test-only-unbound-candidate", result.stdout)
         self.assertIn("Machine output: providers --json", result.stdout)
 
+    def test_card_renders_one_local_budget_choice(self) -> None:
+        result = self.run_cli(
+            "card", "--question", "Which cache should Parallax use?", "--posture", "decision"
+        )
+        self.assertIn("Query Brief", result.stdout)
+        self.assertIn("light: (0, 5, unlimited)", result.stdout)
+        self.assertIn("standard: (1, 15, unlimited)", result.stdout)
+        self.assertIn("heavy: (2, 30, unlimited)", result.stdout)
+        self.assertIn("host 撰寫結論", result.stdout)
+        self.assertEqual(result.stdout.count("請回覆 light、standard、heavy 或 cancel。"), 1)
+
+    def test_card_json_orders_d1_candidates_by_configured_price_rank(self) -> None:
+        result = self.run_cli(
+            "card", "--question", "Choose a cache", "--posture", "decision", "--json"
+        )
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            [item["id"] for item in payload["d1_candidates"]],
+            ["perplexity", "gemini-deep", "openai-deep"],
+        )
+        self.assertEqual(payload["rules"]["conclusion_author"], "host")
+        self.assertEqual(payload["rules"]["provider_reports_role"], "discovery_only")
+        self.assertEqual(
+            {item["id"] for item in payload["search_candidates"]},
+            {"sonar", "brave", "openalex", "exa"},
+        )
+
+    def test_draft_builds_selected_profile_without_confirming_it(self) -> None:
+        result = self.run_cli(
+            "draft",
+            "--question",
+            "Choose a cache",
+            "--posture",
+            "decision",
+            "--profile",
+            "light",
+            "--json",
+        )
+        contract = json.loads(result.stdout)
+        self.assertEqual(contract["research_workflow"], "host_led_v1")
+        self.assertEqual(contract["conclusion_author"], "host")
+        self.assertEqual(contract["resource_envelope"]["cost_budget"]["search"], 5)
+        self.assertIsNone(contract["confirmation"].get("confirmed_at"))
+
     def test_providers_human_view_marks_disabled_routes(self) -> None:
         disabled = copy.deepcopy(
             next(item for item in load_provider_registry()["providers"] if item["id"] == "exa")
@@ -1361,11 +1426,6 @@ if __name__ == "__main__":
 
 class CLIReadJSONDecodeTests(unittest.TestCase):
     def test_undecodable_contract_bytes_raise_typed_error(self) -> None:
-        import tempfile
-        from pathlib import Path
-
-        import research_state
-
         with tempfile.TemporaryDirectory() as tempdir:
             bad = Path(tempdir) / "contract.json"
             bad.write_bytes(b'{"posture": "look\xff\xfeup"}')

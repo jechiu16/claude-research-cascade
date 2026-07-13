@@ -1,0 +1,13 @@
+Query Brief
+問題：Which cache invalidation boundary in Parallax is most likely to prevent stale regime data without increasing coupling?
+研究模式：decision
+交付：背景執行；host 撰寫結論；canonical JSON + 繁體中文 HTML
+
+成本選擇（deep, search, free）
+- light: (0, 5, unlimited)
+- standard: (1, 15, unlimited)
+- heavy: (2, 30, unlimited)
+
+D1 候選（低價優先）：perplexity[rank=1, ready], gemini-deep[rank=2, ready], openai-deep[rank=3, ready]；Search：brave[missing-key], exa[ready], openalex[ready], sonar[ready]；外送：研究問題，不含本機檔案
+規則：D1 只買廣度與結構；host 複驗、修正並下結論；超限即停外呼並標註缺口。
+請回覆 light、standard、heavy 或 cancel。

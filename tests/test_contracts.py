@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from research_harness.contracts import contract_card_sha256, normalize_contract, validate_contract
+from research_harness.contracts import (
+    contract_card_sha256,
+    draft_host_led_contract,
+    normalize_contract,
+    validate_contract,
+)
 from research_harness.providers import (
     ProviderRegistryError,
     load_provider_registry,
@@ -14,7 +19,13 @@ from research_harness.providers import (
     provider_registry_sha256,
     validate_provider_registry,
 )
-from tests.helpers import confirmed_contract, confirmed_medium_contract, draft_medium_contract, write_overlay
+from tests.helpers import (
+    confirmed_contract,
+    confirmed_host_led_contract,
+    confirmed_medium_contract,
+    draft_medium_contract,
+    write_overlay,
+)
 
 
 class ContractTests(unittest.TestCase):
@@ -28,6 +39,68 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(contract["resource_envelope"]["physical_ceiling"]["local"], 1)
         self.assertEqual(contract["resource_envelope"]["physical_ceiling"]["organizer_pass"], 1)
         self.assertEqual(validate_contract(contract, self.registry), [])
+
+    def test_host_led_contract_binds_author_and_cost_vector(self) -> None:
+        contract = confirmed_host_led_contract(self.registry)
+        self.assertEqual(validate_contract(contract, self.registry), [])
+        self.assertEqual(contract["conclusion_author"], "host")
+        self.assertEqual(
+            contract["resource_envelope"]["cost_budget"],
+            {"profile": "standard", "deep": 1, "search": 15, "free": "unlimited"},
+        )
+
+    def test_host_led_contract_rejects_non_host_author_and_missing_reverification(self) -> None:
+        contract = confirmed_host_led_contract(self.registry)
+        contract["conclusion_author"] = "provider"
+        contract["stage_permit_map"] = [
+            item for item in contract["stage_permit_map"] if item.get("stage") != "verification"
+        ]
+        contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
+        errors = validate_contract(contract, self.registry)
+        self.assertIn("host-led workflow requires conclusion_author=host", errors)
+        self.assertIn("host-led workflow requires reserved targeted re-verification", errors)
+
+    def test_draft_builder_selects_cheapest_ready_deep_route_by_count_profile(self) -> None:
+        standard = draft_host_led_contract(
+            "Choose a cache",
+            "decision",
+            "standard",
+            self.registry,
+            {"PERPLEXITY_API_KEY": "test-key"},
+            search_routes=[],
+        )
+        deep = [
+            item for item in standard["stage_permit_map"] if item["category"] == "deep"
+        ]
+        self.assertEqual([(item["stage"], item["route"]) for item in deep], [("investigation", "perplexity")])
+        self.assertEqual(standard["resource_envelope"]["cost_budget"]["deep"], 1)
+
+        heavy = draft_host_led_contract(
+            "Choose a cache",
+            "decision",
+            "heavy",
+            self.registry,
+            {"PERPLEXITY_API_KEY": "test-key"},
+            search_routes=[],
+        )
+        deep = [item for item in heavy["stage_permit_map"] if item["category"] == "deep"]
+        self.assertEqual(
+            [(item["stage"], item["route"]) for item in deep],
+            [("investigation", "perplexity"), ("anti_lock_in", "perplexity")],
+        )
+        self.assertEqual(heavy["resource_envelope"]["cost_budget"]["deep"], 2)
+
+    def test_draft_builder_keeps_light_deep_free(self) -> None:
+        light = draft_host_led_contract(
+            "Choose a cache", "lookup", "light", self.registry, {}, search_routes=[]
+        )
+        self.assertFalse(
+            any(item["category"] == "deep" for item in light["stage_permit_map"])
+        )
+        self.assertEqual(
+            light["resource_envelope"]["cost_budget"],
+            {"profile": "light", "deep": 0, "search": 5, "free": "unlimited"},
+        )
 
     def test_unconfirmed_contract_is_rejected(self) -> None:
         contract = draft_medium_contract()

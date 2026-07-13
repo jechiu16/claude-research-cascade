@@ -1,60 +1,59 @@
 ---
 name: deep
-description: Portable /deep research trigger for Claude Code and OpenAI Codex. Use only when the user explicitly types /deep to start a bounded, evidence-gated research session.
+description: Portable /deep research trigger for Claude Code and OpenAI Codex. Use only when the user explicitly types /deep to start one bounded, host-led research session.
 ---
 
 <!-- PURE_TRIGGER_CARD_START -->
 問題：{正規化後的問題}
-建議：{層級}，因為{一個理由}
-Low：只在對話中回答，附上連結。
-Medium：為具名缺口補上直接取得的來源，並交付套件。
-High：直接取得至少兩個不同來源，並交付套件。
-Ultra：完整 High 證據與驗證，並交付套件。
-付費上限：Low {N/routes}｜Medium {N/routes}｜High {N/routes}｜Ultra {1/2 total；D1=route；D2=route/無；cost/privacy=disclosure}；本機外送：{否/是：範圍}。
-開始：Low｜Medium｜High｜Ultra｜調整
+Query Brief：{決策、範圍、成功條件各一句}
+建議：{light/standard/heavy}，因為{一個理由}
+Light：deep {a}｜search {b}｜free unlimited
+Standard：deep {a}｜search {b}｜free unlimited
+Heavy：deep {a}｜search {b}｜free unlimited
+D1：{最低成本 ready provider；候選與資料外送範圍}
+共通：背景執行；host 複驗並寫結論；交付 JSON + 繁體中文 HTML；超限即停並標註缺口
+開始：light｜standard｜heavy｜調整｜取消
 <!-- PURE_TRIGGER_CARD_END -->
 
-# Agent Deep Research Trigger
-SKILL.md is the sole human protocol shared by Claude Code and OpenAI Codex.
-The first `/deep` response is exactly the eight card lines above, with no prose before or after; normalize and recommend from conversation text only.
-The card's route/count is a precise, unverified authorization proposal from conversation text plus static policy; it is not route readiness.
-Render every `{...}` token in the card as a concrete value before showing it;
-the confirmed Ultra card contains one exact total, never an unresolved range.
-If no research question is recognizable, still show the card with
-`問題：尚未提供研究問題` and `建議：調整，因為需要先提供研究問題`; do not ask first.
-額外付費請求只計 provider/API paid calls；host-native retrieval、local、Organizer 不計，無計畫 external paid route 時預設為 0。
+# /deep
 
-## Before Selection
-Host discovery may read the wrapper and canonical SKILL.md to load this
-instruction; that is not a research action. Before selection, do not call tools
-or inspect research, project, runtime, or source material; do not search the web,
-run scripts, start workers, or preflight registry routes. Low never reads or invokes the runtime.
-Each concrete card's tier choice is the only confirmation for that run/contract; re-card requires a new choice. `調整` starts no research.
+`SKILL.md` is the sole public protocol shared by Claude Code and Codex. On
+explicit `/deep`, normalize the question from conversation context, run only
+the local `deep-research-state card` command, and show exactly one completed
+card with no prose around it. If the question is missing, set the recommendation
+to `調整`; do not start research.
 
-## After Selection
-After Medium, High, or Ultra is selected, read [HARNESS.md](HARNESS.md) beside this canonical skill and follow its internal runtime bridge; do not expose bridge commands as user steps.
-Only local-preflight the exact routes/counts on the confirmed card. If any route is unavailable, make no paid call: terminate or return to a new concrete card.
-Never silently fallback or use a runtime-resolved wildcard; any route, count, or egress change requires a new concrete card and tier confirmation.
-When a concrete route is Gemini, it must be explicitly disclosed as D1 or D2 in the initial Ultra card; choosing Ultra authorizes it, and the label must disclose preview, ~$1-3, remote 55d/1d retention, and no ZDR; local egress remains the card field.
-Ultra D2 may use only the optional D2 route named on the initial card; the Organizer decides stop/run D2 and its material next question without a second confirmation. A different route, count, egress, privacy, or cost scope requires a new card and run.
-Report only: 界定問題 -> 蒐集資料 -> 交叉檢查 -> 形成結論 -> 交付結果.
+## Before Confirmation
 
-Low returns a bounded Traditional Chinese chat answer and links. Medium adds a
-direct source for a named gap, conflict, or decision risk. High directly gets at
-least two different sources. Medium, High, and Ultra always deliver canonical JSON and
-`zh-Hant-TW` HTML, including blocked results.
+Do not search, inspect the project, call a provider, or start a worker. Local
+profile/registry reads for the card are allowed and make no external request.
+The user's `light`, `standard`, or `heavy` reply confirms that printed count
+vector and disclosed provider/egress set for one run. `調整` and `取消` spend
+nothing. Re-card only when the vector, provider set, or egress scope changes.
 
-## Evidence And Delivery
-Medium load-bearing claims require a directly captured source and a named
-marginal purpose. High requires two qualifying captures with distinct canonical
-source keys and content hashes, exact excerpts, and shared-upstream disclosure;
-agreement never proves independence or truth.
-Ultra combines High with an adaptive Deep loop; one choice authorizes at most two submits, and the Organizer may stop or use D2 after the High checkpoint, never a parallel provider bundle. The full report is consumed with bounded session context; useful decision deltas MAY go in existing observations/notes.
+## After Confirmation
 
-Fail closed: an evidence-floor gap yields canonical `BLOCKED`/`證據不足` and HTML
-`EVIDENCE_INSUFFICIENT`; a terminal/handoff/completeness gap yields canonical
-`BLOCKED`/`交付不完整` and HTML `DELIVERY_INCOMPLETE`.
+Read [HARNESS.md](HARNESS.md), create the canonical package, and run in the
+background. The selected host is the Organizer and sole conclusion author.
+Provider reports, including D1/D2, buy breadth and structure only; they cannot
+support a canonical claim.
 
-Write human-facing canonical narrative fields in Traditional Chinese when it is
-the user's working language. Preserve exact excerpts, source titles, identifiers,
-URLs, and machine diagnostics in their original form.
+Use the cheapest ready D1 provider unless source fit or privacy gives a named
+reason to choose another disclosed candidate. After each provider report, feed
+its useful hypotheses, contradictions, citations, and prior session context to
+the host. The host chooses targeted re-verification, consuming `search`; `free`
+routes remain unlimited within physical/time safety bounds. Fix disproved
+claims, mark unverifiable claims, and never withhold delivery for uncertainty.
+
+Stop external calls at the confirmed count limit. Finish from existing
+materials and name the unresolved gap. Heavy may use a second deep call only
+when the host expects a material new angle, challenge, or expansion; no hard
+gate and no automatic provider bundle.
+
+## Delivery
+
+Always deliver canonical `state.json`, `events.jsonl`, `raw/`, and
+`report.html`. Human-facing narrative fields and HTML are Traditional Chinese;
+exact excerpts, titles, URLs, IDs, hashes, and diagnostics stay unchanged.
+Integrity failure remains unsafe; evidence insufficiency remains an annotated
+epistemic status. Neither prevents producing the package.

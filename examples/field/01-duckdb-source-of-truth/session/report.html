@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta data-state-sha256="d9b0f7006d1c3834f0ebc2e1eb3283acb9b484d48f2f9ac21c1fb359707542f1" content="canonical-state-binding">
+  <title>研究工作階段 deep-3ccb56db4c8c4252be235e4678be42bb</title>
+  <style>
+    :root { --ink:#18201f; --muted:#60706b; --paper:#f4f0e6; --panel:#fffdf7;
+      --line:#c8c0ad; --accent:#a33b20; --forest:#21564a; --gold:#c49335; --bad:#8d2118; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:
+      radial-gradient(circle at 9% 4%, #e7d8b5 0, transparent 28rem),
+      linear-gradient(135deg, #f8f4e9, var(--paper));
+      font-family:"Noto Serif TC","PingFang TC","Songti TC","Iowan Old Style","Palatino Linotype",Georgia,serif; line-height:1.55; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.22;
+      background-image:repeating-linear-gradient(90deg, transparent 0 79px, #998d7330 80px); }
+    main,header { position:relative; width:min(1120px,calc(100% - 32px)); margin:auto; }
+    header { padding:64px 0 32px; border-bottom:2px solid var(--ink); }
+    .eyebrow { text-transform:uppercase; letter-spacing:.18em; font:700 12px/1.2 Georgia,serif; color:var(--accent); }
+    h1 { margin:.25rem 0 .5rem; font-size:clamp(2.5rem,7vw,5.8rem); line-height:.92; max-width:13ch; }
+    h2 { margin:0 0 1.25rem; font-size:clamp(1.65rem,3vw,2.5rem); }
+    h3 { margin:.45rem 0; }
+    .status-line { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:22px; }
+    .verdict { border:2px solid currentColor; padding:6px 11px; font-weight:800; letter-spacing:.08em; }
+    .verdict.pass { color:var(--forest); } .verdict.invalid { color:var(--bad); }
+    .verdict.partial { color:#78530c; } .verdict.blocked { color:var(--bad); }
+    .hash { color:var(--muted); word-break:break-all; font:12px/1.4 Menlo,Consolas,monospace; }
+    main { padding:24px 0 80px; display:grid; gap:18px; }
+    section { background:color-mix(in srgb,var(--panel) 94%,transparent); border:1px solid var(--line);
+      padding:clamp(22px,4vw,44px); box-shadow:0 14px 38px #4e46351a; }
+    .decision { border-left:8px solid var(--accent); }
+    .decision-text { font-size:clamp(1.35rem,2.6vw,2rem); max-width:38ch; }
+    .human-first { border-left:8px solid var(--forest); }
+    .human-first h2 { font-size:clamp(1.8rem,4vw,3.2rem); }
+    .reason-list { padding-left:1.2rem; } .reason-list li { margin:.55rem 0; }
+    .kernel-details { margin-top:4px; }
+    .meta-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+    .meta-card,.verification,.safe-action { background:#f6f0e1; border:1px solid var(--line); padding:15px; }
+    .claim { padding:22px 0; border-top:1px solid var(--line); } .claim:first-child { border-top:0; }
+    .claim-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px;
+      font:700 11px/1.5 Menlo,Consolas,monospace; text-transform:uppercase; }
+    .pill.critical { color:var(--accent); border-color:var(--accent); }
+    details { margin:.8rem 0; } summary { cursor:pointer; font-weight:700; }
+    .evidence { border:1px solid var(--line); background:#fbf7ed; padding:14px 17px; }
+    .evidence-meta { display:flex; flex-wrap:wrap; gap:8px 20px; color:var(--muted); margin:12px 0; }
+    blockquote { margin:14px 0; padding:16px 20px; border-left:4px solid var(--gold); background:#efe8d8;
+      white-space:pre-wrap; overflow-wrap:anywhere; }
+    .offsets,.note,.empty { color:var(--muted); }
+    .table-wrap { overflow-x:auto; } table { width:100%; border-collapse:collapse; }
+    th,td { text-align:left; padding:10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-size:.75rem; }
+    .verification-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+    .issues { padding-left:1.2rem; } .issues li { margin:.55rem 0; } .issues .error { color:var(--bad); }
+    .gate-ok { color:var(--forest); font-weight:800; }
+    code { font-family:Menlo,Consolas,monospace; font-size:.86em; }
+    a { color:var(--forest); text-underline-offset:3px; }
+    footer { margin-top:20px; color:var(--muted); font-size:.85rem; }
+    @media (max-width:620px) { header { padding-top:38px; } section { padding:20px; }
+      .hash { font-size:10px; } th,td { padding:8px; } }
+    @media print { body { background:white; } body::before { display:none; } section { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">研究報告</div>
+    <h1>Should Parallax use SQLite or DuckDB as its default local analytics engine?</h1>
+    <div class="status-line"><span class="pill status">light</span></div>
+  </header>
+  <main>
+    <section class="human-first"><div class="eyebrow">研究建議</div><h2>不要重新選型；把工程資源留給 DuckDB 路徑的可靠性與驗收。</h2>
+      <p><strong>研究狀態:</strong> 已由目前 repository 的正式 ADR 完成複驗。</p>
+      <div class="decision"><div class="eyebrow">有界結論</div><h3>結論</h3>
+      <p class="decision-text">維持 DuckDB 作為 Parallax 唯一的預設 ledger engine；不恢復 SQLite、也不另開雙寫或 fallback。</p>
+      </div><h3>核心理由</h3><ul class="reason-list"><li>Parallax 已決定完全退役 SQLite，DuckDB 是 ledger 的唯一 source of truth；本題應維持既有決策，而非重新選型。（<a href="https://github.com/jechiu16/parallax/blob/a8c4284e73156ac62e61d5e70a273781342c55fb/docs/discussions/2026-04-17-sqlite-retirement-decision.md">SQLite Retirement Decision (ADR)</a>）</li></ul><p><strong>上游關係：</strong>相同</p>
+      <h3>限制與翻轉條件</h3><ul><li>若 ADR 被 supersede 或出現 DuckDB 無法滿足的新硬需求，才重啟選型。</li><li>正式 ADR 被 supersede，或新增不可由 DuckDB 滿足的硬性需求。</li></ul>
+      <h3>下一步</h3><article class="safe-action"><h3>SA1: 在下一個相關變更只檢查是否意外重新引入 SQLite 依賴，不改動儲存架構。</h3><p>可逆：是</p><p>依賴主張：C1</p></article></section>
+    <details class="kernel-details"><summary>技術細節</summary>
+    <section class="decision"><div class="eyebrow">有界結論</div><h2>結論</h2>
+      <p class="decision-text">維持 DuckDB 作為 Parallax 唯一的預設 ledger engine；不恢復 SQLite、也不另開雙寫或 fallback。</p>
+      <p><strong>更新時間:</strong> 2026-07-13T12:10:12Z</p>
+      <p><strong>status:</strong> <span class="verdict pass">PASS</span></p>
+      <p><strong>posture:</strong> decision</p></section>
+    <section><h2>研究契約</h2><div class="meta-grid">
+      <div class="meta-card"><strong>成本檔位</strong><br>light</div>
+      <div class="meta-card"><strong>研究模式</strong><br>decision</div>
+      <div class="meta-card"><strong>初始搜尋路由</strong><br>host-web</div>
+      <div class="meta-card"><strong>關鍵主張下限</strong><br>1</div>
+    </div><details><summary>成本向量</summary><table><tbody><tr><td>deep</td><td>0</td></tr><tr><td>search</td><td>5</td></tr><tr><td>free</td><td>unlimited</td></tr></tbody></table></details>
+    <details><summary>實體請求上限</summary><table><tbody><tr><td>deep</td><td>0</td></tr><tr><td>host_retrieval</td><td>3</td></tr><tr><td>local</td><td>1</td></tr><tr><td>network_experiment</td><td>0</td></tr><tr><td>organizer_pass</td><td>1</td></tr><tr><td>probe</td><td>15</td></tr><tr><td>processor</td><td>0</td></tr><tr><td>transport</td><td>0</td></tr></tbody></table></details></section>
+    <section><h2>正式主張</h2><article class="claim"><div class="claim-head"><code>C1</code><span class="pill critical">關鍵主張</span><span class="pill status">corroborated</span></div><h3>Parallax 已決定完全退役 SQLite，DuckDB 是 ledger 的唯一 source of truth；本題應維持既有決策，而非重新選型。</h3><p><strong>範圍:</strong> 目前 Parallax repository 與既有 ADR</p><p><strong>適用性:</strong> checked</p><p><strong>支持證據:</strong> E1</p><details><summary>限定條件與翻轉條件</summary><ul><li>此結論是 repo source-of-record 決策，不是一般性資料庫比較</li></ul><p><strong>重新評估條件:</strong> 正式 ADR 被 supersede，或新增不可由 DuckDB 滿足的硬性需求。</p></details></article></section>
+    <section><h2>證據紀錄</h2><details class="evidence"><summary><code>E1</code> T1 / entailed</summary><div class="evidence-meta"><span>來源 S1</span><span>起源 OR1</span><span>資料檔 A1</span></div><blockquote>**Retire SQLite entirely. DuckDB becomes the sole source of truth for the ledger.** All existing SQLite data is discarded on cutover. No data migration is performed.</blockquote><p class="offsets">原文位元組範圍: 0..165</p></details></section>
+    <section><h2>來源與起源</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>來源標題</th><th>來源層級</th><th>起源</th><th>起源類型</th><th>直接擷取</th></tr></thead><tbody><tr><td><code>S1</code></td><td><a href="https://github.com/jechiu16/parallax/blob/a8c4284e73156ac62e61d5e70a273781342c55fb/docs/discussions/2026-04-17-sqlite-retirement-decision.md">SQLite Retirement Decision (ADR)</a></td><td>T1</td><td>OR1</td><td>repository-source-of-record</td><td>是</td></tr></tbody></table></div></section>
+    <section><h2>驗證</h2><div class="verification-grid"><article class="verification"><code>VR1</code><h3>targeted_reverification</h3><p>已完成：是</p><p>上下文分離：未記錄</p></article></div></section>
+    <section><h2>工程交接</h2><article class="safe-action"><h3>SA1: 在下一個相關變更只檢查是否意外重新引入 SQLite 依賴，不改動儲存架構。</h3><p>可逆：是</p><p>依賴主張：C1</p></article>
+      <h3>限制條件</h3><ul><li>若 ADR 被 supersede 或出現 DuckDB 無法滿足的新硬需求，才重啟選型。</li></ul>
+      <h3>驗收測試</h3><ul><li>搜尋 runtime 與 migration 的 SQLite 依賴 =&gt; 不存在新的 SQLite write/read fallback</li></ul></section>
+    <section><h2>待釐清問題</h2><p class="empty">尚未記錄</p></section>
+    <section><h2>決定性檢查結果</h2>
+      <p><strong>integrity_ok:</strong> 是</p>
+      <p><strong>tier_contract_met:</strong> 是</p>
+      <p><strong>human_recommendation:</strong> 不要重新選型；把工程資源留給 DuckDB 路徑的可靠性與驗收。</p>
+      <p class="gate-ok">所有決定性檢查均已通過。</p></section>
+    <p class="hash">state sha256 d9b0f7006d1c3834f0ebc2e1eb3283acb9b484d48f2f9ac21c1fb359707542f1</p></details>
+    <footer>本報告只從唯一正式 JSON 狀態決定性產生，不含模型撰寫的第二層報告、JavaScript 或遠端資產。</footer>
+  </main>
+</body>
+</html>

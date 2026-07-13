@@ -26,6 +26,7 @@ from research_harness.artifacts import (
     ingest_local_artifact,
     promote_provider_payload,
 )
+from research_harness.budgets import load_budget_profiles
 from research_harness._canon import canonical_question
 from research_harness.boundary import (
     execute_deep_poll,
@@ -35,6 +36,7 @@ from research_harness.boundary import (
 )
 from research_harness.contracts import (
     contract_card_sha256,
+    draft_host_led_contract,
     normalize_contract,
     validate_contract,
 )
@@ -46,7 +48,12 @@ from research_harness.providers import (
     provider_registry_sha256,
     referenced_provider_records,
 )
-from research_harness.quota import _record_attempt_status_unlocked, acquire_permits, permit_usage
+from research_harness.quota import (
+    _record_attempt_status_unlocked,
+    acquire_permits,
+    cost_usage,
+    permit_usage,
+)
 from research_harness.rendering import finalize_session_result, render_session_result
 from research_harness.state import new_state, state_sha256
 from research_harness.storage import (
@@ -183,6 +190,43 @@ def _format_provider_readiness(payload: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _format_confirmation_card(payload: dict[str, Any]) -> str:
+    brief = payload["query_brief"]
+    lines = [
+        "Query Brief",
+        f"問題：{brief['question']}",
+        f"研究模式：{brief['posture']}",
+        "交付：背景執行；host 撰寫結論；canonical JSON + 繁體中文 HTML",
+        "",
+        "成本選擇（deep, search, free）",
+    ]
+    for name in ("light", "standard", "heavy"):
+        profile = payload["profiles"][name]
+        lines.append(
+            f"- {name}: ({profile['deep']}, {profile['search']}, {profile['free']})"
+        )
+    deep_candidates = payload["d1_candidates"]
+    if deep_candidates:
+        candidates = ", ".join(
+            f"{item['id']}[rank={item['cost_rank']}, {item['state']}]"
+            for item in deep_candidates
+        )
+    else:
+        candidates = "目前沒有 ready provider；仍可選 light"
+    search_candidates = ", ".join(
+        f"{item['id']}[{item['state']}]" for item in payload["search_candidates"]
+    ) or "無付費 search route；仍可用 free routes"
+    lines.extend(
+        [
+            "",
+            f"D1 候選（低價優先）：{candidates}；Search：{search_candidates}；外送：研究問題，不含本機檔案",
+            "規則：D1 只買廣度與結構；host 複驗、修正並下結論；超限即停外呼並標註缺口。",
+            "請回覆 light、standard、heavy 或 cancel。",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
 def _validate_prepared_contract(
     contract: dict[str, Any], registry: dict[str, Any], binding: dict[str, str]
 ) -> None:
@@ -209,6 +253,8 @@ def command_providers(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             {
                 "id": provider["id"],
                 "enabled": provider["enabled"],
+                "cost_class": provider["cost_class"],
+                "cost_rank": provider.get("cost_rank"),
                 "adapter": provider["adapter"],
                 "adapter_version": provider["adapter_version"],
                 "execution_binding": provider["execution_binding"],
@@ -217,6 +263,7 @@ def command_providers(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "action_categories": provider["action_categories"],
                 "stage_capabilities": provider["stage_capabilities"],
                 "request_multiplicity": provider["request_multiplicity"],
+                "metering": provider["metering"],
                 "required_env": [
                     {"name": name, "present": bool(os.environ.get(name))}
                     for name in provider["required_env"]
@@ -229,6 +276,60 @@ def command_providers(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "registry_sha256": provider_registry_sha256(registry),
         "providers": providers,
     }, 0
+
+
+def command_card(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    registry = _registry(args.registry_overlay)
+    profiles = load_budget_profiles(Path(args.profiles) if args.profiles else None)
+    candidates = []
+    search_candidates = []
+    for provider in registry["providers"]:
+        if provider.get("cost_class") not in {"deep", "search"} or provider.get("enabled") is not True:
+            continue
+        missing = [name for name in provider["required_env"] if not os.environ.get(name)]
+        item = {
+            "id": provider["id"],
+            "state": "ready" if not missing else "missing-key",
+            "missing_env": missing,
+            "list_price": provider["metering"]["list_price"],
+            "verified_at": provider["metering"]["verified_at"],
+        }
+        if provider["cost_class"] == "deep":
+            candidates.append({**item, "cost_rank": provider["cost_rank"]})
+        else:
+            search_candidates.append(item)
+    candidates.sort(key=lambda item: (item["cost_rank"], item["id"]))
+    search_candidates.sort(key=lambda item: item["id"])
+    return {
+        "query_brief": {
+            "question": canonical_question(args.question),
+            "posture": args.posture,
+        },
+        "profiles": profiles["profiles"],
+        "d1_candidates": candidates,
+        "search_candidates": search_candidates,
+        "rules": {
+            "conclusion_author": "host",
+            "provider_reports_role": "discovery_only",
+            "reverification": "correct_or_annotate_never_block_delivery",
+            "limit_behavior": "stop_external_calls_deliver_existing_materials_annotate_gaps",
+        },
+    }, 0
+
+
+def command_draft(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    registry = _registry(args.registry_overlay)
+    contract = draft_host_led_contract(
+        args.question,
+        args.posture,
+        args.profile,
+        registry,
+        os.environ,
+        profile_path=Path(args.profiles) if args.profiles else None,
+        deep_routes=args.deep_route,
+        search_routes=args.search_route,
+    )
+    return contract, 0
 
 
 def command_prepare(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -326,7 +427,11 @@ def command_permit(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         args.count,
         args.now or _now(),
     )
-    return {"permits": permits, "usage": permit_usage(Path(args.session))}, 0
+    return {
+        "permits": permits,
+        "usage": permit_usage(Path(args.session)),
+        "cost_usage": cost_usage(Path(args.session)),
+    }, 0
 
 
 ATTEMPT_CLI_CATEGORIES = {"organizer_pass", "local", "host_retrieval", "network_experiment"}
@@ -557,6 +662,8 @@ def command_status(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "revision": state["session"]["revision"],
         "summary": state["summary"],
         "usage": permit_usage(Path(args.session)),
+        "cost_budget": state.get("contract", {}).get("resource_envelope", {}).get("cost_budget"),
+        "cost_usage": cost_usage(Path(args.session)),
         "validation": validation.to_dict(),
     }, 0
 
@@ -740,6 +847,29 @@ def build_parser() -> argparse.ArgumentParser:
     providers.add_argument("--registry-overlay")
     _add_json_flag(providers)
     providers.set_defaults(handler=command_providers)
+
+    card = subparsers.add_parser(
+        "card", help="render the single local-only budget confirmation card"
+    )
+    card.add_argument("--question", required=True)
+    card.add_argument("--posture", choices=["lookup", "synthesis", "scientific", "decision"], default="decision")
+    card.add_argument("--profiles", help="optional budget profile JSON override")
+    card.add_argument("--registry-overlay")
+    _add_json_flag(card)
+    card.set_defaults(handler=command_card)
+
+    draft = subparsers.add_parser(
+        "draft", help="build an unconfirmed host-led contract after profile selection"
+    )
+    draft.add_argument("--question", required=True)
+    draft.add_argument("--posture", choices=["lookup", "synthesis", "scientific", "decision"], default="decision")
+    draft.add_argument("--profile", choices=["light", "standard", "heavy"], required=True)
+    draft.add_argument("--profiles", help="optional budget profile JSON override")
+    draft.add_argument("--registry-overlay")
+    draft.add_argument("--deep-route", action="append")
+    draft.add_argument("--search-route", action="append")
+    _add_json_flag(draft)
+    draft.set_defaults(handler=command_draft)
 
     prepare = subparsers.add_parser(
         "prepare", help="internal runtime: prepare an unconfirmed contract card"
@@ -1041,6 +1171,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.command == "providers" and not args.json:
         print(_format_provider_readiness(payload), end="")
+    elif args.command == "card" and not args.json:
+        print(_format_confirmation_card(payload), end="")
     elif args.json:
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
     else:

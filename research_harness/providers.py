@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ._canon import RETENTION_RANK, is_positive_count as _is_positive_int, sha256_hex
+from .budgets import COST_CLASSES
 
 
 REGISTRY_PATH = Path(__file__).with_name("provider_registry.json")
@@ -19,6 +20,7 @@ REQUIRED_PROVIDER_FIELDS = (
     "adapter",
     "adapter_version",
     "enabled",
+    "cost_class",
     "roles",
     "action_categories",
     "stage_capabilities",
@@ -61,6 +63,18 @@ LOCAL_BINDINGS = frozenset({"host_native_observed", "local", "no_network_demo"})
 
 class ProviderRegistryError(ValueError):
     """Raised when registry data or an overlay would create an unsafe route."""
+
+
+def action_cost_class(provider: dict[str, Any], category: str) -> str:
+    """Return the user-facing cost class for one physical action.
+
+    Async polling is transport, not another Deep Research submit. It remains
+    physically bounded by the contract but does not consume the deep budget.
+    """
+
+    if category == "transport":
+        return "free"
+    return str(provider.get("cost_class", "unclassified"))
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -129,6 +143,16 @@ def validate_provider_registry(registry: dict[str, Any]) -> list[str]:
 
         if not isinstance(provider.get("enabled"), bool):
             errors.append(f"provider {provider_id} enabled must be boolean")
+        cost_class = provider.get("cost_class")
+        if cost_class not in COST_CLASSES | {"unclassified"}:
+            errors.append(f"provider {provider_id} cost_class is invalid")
+        elif provider.get("enabled") is True and cost_class == "unclassified":
+            errors.append(f"enabled provider {provider_id} must declare a cost_class")
+        cost_rank = provider.get("cost_rank")
+        if cost_class == "deep" and not _is_positive_int(cost_rank):
+            errors.append(f"deep provider {provider_id} cost_rank must be a positive integer")
+        elif cost_class != "deep" and cost_rank is not None:
+            errors.append(f"non-deep provider {provider_id} cannot declare cost_rank")
         for field in (
             "adapter",
             "adapter_version",
@@ -256,7 +280,10 @@ def _merge_overlay(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, A
         "retrieval_shape",
         "evidence_capabilities",
     )
-    fixed_policy_fields = ("controls", "metering", "transport", "privacy", "adoption_status", "adoption_evidence")
+    fixed_policy_fields = (
+        "cost_class", "cost_rank", "controls", "metering", "transport", "privacy",
+        "adoption_status", "adoption_evidence",
+    )
     for candidate in overlay_providers:
         if not isinstance(candidate, dict) or not isinstance(candidate.get("id"), str):
             raise ProviderRegistryError("provider overlay records require string ids")

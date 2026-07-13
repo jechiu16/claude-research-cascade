@@ -1,11 +1,20 @@
 {
   "question": "Choose a cache",
   "posture": "lookup",
-  "tier": "medium",
-  "execution": "host_native",
+  "tier": "custom",
+  "execution": "external_managed",
   "durability": "canonical_package",
+  "research_workflow": "host_led_v1",
+  "conclusion_author": "host",
+  "provider_reports_role": "discovery_only",
   "scout_route": "host-web",
   "resource_envelope": {
+    "cost_budget": {
+      "profile": "light",
+      "deep": 0,
+      "search": 5,
+      "free": "unlimited"
+    },
     "physical_ceiling": {
       "probe": 0,
       "deep": 0,
@@ -31,7 +40,7 @@
       "estimated_spend_usd": {
         "minimum": 0.0,
         "maximum": 0.0,
-        "hard_cap": false
+        "hard_cap": true
       },
       "raw_storage_bytes": 10485760
     },
@@ -97,10 +106,10 @@
     "allow_provider_payloads": false
   },
   "confirmation": {
-    "confirmed_by": "user",
-    "confirmed_at": "2026-07-10T12:00:00Z",
-    "card_sha256": "24c1ab5a250dcb5e5c4efde56c3b80c9c9658a038ec31d1bbf2a91d4528ea423",
-    "registry_sha256": "08da81f9440a84edaa3e68319de167b900dd0f0c607ffa7402a6786ea36cf545",
-    "referenced_records_sha256": "f3c99ac48d165d920b8c8d2d97cf874c61b1d4f2ed2ba557cc3449d0c521634e"
+    "confirmed_by": null,
+    "confirmed_at": null,
+    "card_sha256": null,
+    "registry_sha256": null,
+    "referenced_records_sha256": null
   }
 }

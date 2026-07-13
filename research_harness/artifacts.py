@@ -443,13 +443,22 @@ def ingest_host_capture(
         _recover_session_unlocked(session_dir)
         state = _load_state_unlocked(session_dir)
         contract = state.get("contract", {})
-        if (
-            contract.get("execution") != "host_native"
-            or contract.get("durability") != "canonical_package"
-            or contract.get("tier") not in {"medium", "high", "ultra"}
+        legacy_host_native = (
+            contract.get("execution") == "host_native"
+            and contract.get("tier") in {"medium", "high", "ultra"}
+        )
+        host_led = (
+            contract.get("execution") == "external_managed"
+            and contract.get("tier") == "custom"
+            and contract.get("research_workflow") == "host_led_v1"
+            and contract.get("conclusion_author") == "host"
+            and contract.get("provider_reports_role") == "discovery_only"
+        )
+        if contract.get("durability") != "canonical_package" or not (
+            legacy_host_native or host_led
         ):
             raise ArtifactPolicyError(
-                "host captures require a host-native canonical-package Medium, High, or Ultra contract"
+                "host captures require a canonical host-native tier or host-led workflow"
             )
         return _ingest_unlocked(
             session_dir,

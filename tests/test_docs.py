@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import re
 import unittest
 from pathlib import Path
 
-from research_harness.contracts import contract_card_sha256
+from research_harness.providers import load_provider_registry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,478 +19,196 @@ class DocumentationTests(unittest.TestCase):
         end = text.index(next_heading, start) if next_heading else len(text)
         return text[start:end]
 
-    def test_first_trigger_card_is_exactly_eight_lines(self) -> None:
+    def test_trigger_card_is_one_nine_line_profile_card(self) -> None:
         text = self.read("SKILL.md")
         start = text.index("<!-- PURE_TRIGGER_CARD_START -->")
         end = text.index("<!-- PURE_TRIGGER_CARD_END -->", start)
         card = text[start:end].splitlines()[1:]
-
         self.assertEqual(
             card,
             [
                 "問題：{正規化後的問題}",
-                "建議：{層級}，因為{一個理由}",
-                "Low：只在對話中回答，附上連結。",
-                "Medium：為具名缺口補上直接取得的來源，並交付套件。",
-                "High：直接取得至少兩個不同來源，並交付套件。",
-                "Ultra：完整 High 證據與驗證，並交付套件。",
-                "付費上限：Low {N/routes}｜Medium {N/routes}｜High {N/routes}｜Ultra {1/2 total；D1=route；D2=route/無；cost/privacy=disclosure}；本機外送：{否/是：範圍}。",
-                "開始：Low｜Medium｜High｜Ultra｜調整",
+                "Query Brief：{決策、範圍、成功條件各一句}",
+                "建議：{light/standard/heavy}，因為{一個理由}",
+                "Light：deep {a}｜search {b}｜free unlimited",
+                "Standard：deep {a}｜search {b}｜free unlimited",
+                "Heavy：deep {a}｜search {b}｜free unlimited",
+                "D1：{最低成本 ready provider；候選與資料外送範圍}",
+                "共通：背景執行；host 複驗並寫結論；交付 JSON + 繁體中文 HTML；超限即停並標註缺口",
+                "開始：light｜standard｜heavy｜調整｜取消",
             ],
         )
-        self.assertEqual(len(card), 8)
         self.assertLessEqual(len(text.splitlines()), 60)
-        self.assertNotIn("mandatory Deep Research", card[6])
-        self.assertIn("Render every `{...}` token", text)
-        self.assertIn("D1=route；D2=route/無", card[6])
+        self.assertIn("show exactly one completed card", " ".join(text.split()))
 
-    def test_missing_question_still_returns_the_card_without_a_followup(self) -> None:
-        text = " ".join(self.read("SKILL.md").split())
-        self.assertIn("conversation text only", text)
-        self.assertIn("問題：尚未提供研究問題", text)
-        self.assertIn("建議：調整，因為需要先提供研究問題", text)
-        self.assertIn("do not ask first", text)
-
-    def test_tier_selection_has_zero_preselection_tools(self) -> None:
+    def test_preconfirmation_allows_only_local_card_reads(self) -> None:
         text = self.read("SKILL.md")
-        before = self.section(text, "## Before Selection", "## After Selection")
-        normalized = " ".join(before.split())
-
-        for phrase in (
-            "do not call tools",
-            "inspect research, project, runtime, or source material",
-            "search the web",
-            "run scripts",
-            "start workers",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, normalized)
-        self.assertIn("Low never reads or invokes the runtime", normalized)
-        self.assertIn("read [HARNESS.md](HARNESS.md)", text)
-
-    def test_card_authorization_is_unverified_and_postselection_is_fail_closed(self) -> None:
-        text = self.read("SKILL.md")
-        normalized = " ".join(text.split())
-        before = " ".join(self.section(text, "## Before Selection", "## After Selection").split())
-        after = " ".join(self.section(text, "## After Selection", "## Evidence And Delivery").split())
-
-        self.assertIn("precise, unverified authorization proposal", normalized)
-        self.assertIn("conversation text plus static policy", normalized)
-        self.assertIn("not route readiness", normalized)
-        self.assertIn("preflight registry routes", before)
-        self.assertIn("Each concrete card's tier choice is the only confirmation for that run/contract; re-card requires a new choice.", before)
-        self.assertIn("Only local-preflight the exact routes/counts on the confirmed card", after)
-        self.assertIn("make no paid call", after)
-        self.assertIn("Never silently fallback", after)
-        self.assertIn("runtime-resolved wildcard", after)
-        self.assertIn("any route, count, or egress change requires a new concrete card and tier confirmation", after)
-        self.assertIn("When a concrete route is Gemini", after)
-        self.assertIn("without a second confirmation", after)
-
-    def test_paid_call_count_excludes_non_provider_actions(self) -> None:
-        text = " ".join(self.read("SKILL.md").split())
-        self.assertIn(
-            "額外付費請求只計 provider/API paid calls；host-native retrieval、local、Organizer 不計，無計畫 external paid route 時預設為 0。",
-            text,
+        before = " ".join(
+            self.section(text, "## Before Confirmation", "## After Confirmation").split()
         )
+        for phrase in (
+            "Do not search",
+            "inspect the project",
+            "call a provider",
+            "start a worker",
+            "Local profile/registry reads",
+            "make no external request",
+        ):
+            self.assertIn(phrase, before)
+        self.assertIn("one run", before)
+        self.assertIn("Re-card only", before)
 
-    def test_medium_high_bridge_defines_repo_local_cli_and_flow(self) -> None:
+    def test_host_authorship_reverification_and_delivery_are_public_rules(self) -> None:
+        text = " ".join(self.read("SKILL.md").split())
+        for phrase in (
+            "sole conclusion author",
+            "buy breadth and structure only",
+            "cannot support a canonical claim",
+            "targeted re-verification",
+            "Fix disproved claims",
+            "mark unverifiable claims",
+            "never withhold delivery",
+            "Stop external calls at the confirmed count limit",
+            "name the unresolved gap",
+            "no hard gate",
+            "no automatic provider bundle",
+        ):
+            self.assertIn(phrase, text)
+
+    def test_harness_uses_repo_local_cli_and_one_internal_confirmation(self) -> None:
         text = self.read("HARNESS.md")
-        bridge = self.section(text, "## Runtime Bridge", "## Internal Binding")
-        normalized = " ".join(bridge.split())
-
-        self.assertIn("absolute directory containing that canonical `SKILL.md`", normalized)
+        bridge = self.section(text, "## Runtime Bridge", "## Contract Shape")
         self.assertIn('CLI="$ROOT/.venv/bin/deep-research-state"', bridge)
         self.assertIn('SESSION="/absolute/path/to/this-run-package"', bridge)
-        self.assertIn("host-capture", bridge)
-        self.assertIn('"$CLI" patch "$SESSION" --patch "/absolute/path/to/state-patch.json" --json', bridge)
-        self.assertIn("acceptance_tests", bridge)
-        self.assertIn("`檢查方式 => 預期結果`", bridge)
-        self.assertIn("non-empty text on both sides", normalized)
-        self.assertIn("adds no schema", normalized)
-        self.assertIn("Set status before `validate` for PASS", normalized)
-        self.assertIn("must not retain `IN_PROGRESS`", normalized)
-        self.assertIn("--payload", bridge)
-        self.assertIn("--marginal-purpose", bridge)
-        self.assertIn("--fidelity host_rendered", bridge)
-        self.assertNotIn("--input", bridge)
-        self.assertNotIn("--purpose", bridge)
-        self.assertNotIn("$ROOT/.deep", bridge)
-        self.assertIn("Do not use `command -v`", normalized)
+        self.assertIn('"$CLI" card', bridge)
+        self.assertIn('"$CLI" prepare', bridge)
+        self.assertIn('"$CLI" confirm', bridge)
+        self.assertIn('"$CLI" init', bridge)
+        self.assertIn("only user confirmation", bridge)
+        self.assertIn("not a second prompt", bridge)
+        self.assertNotIn("scripts/research_state.py", text)
+        self.assertNotIn("command -v", text)
 
-        flow = "init -> host-capture -> patch as needed -> validate -> render"
-        self.assertIn(flow, normalized)
-        command_lines = [line.strip() for line in bridge.splitlines() if line.strip().startswith('"$CLI"')]
-        self.assertGreaterEqual(len(command_lines), 4)
-        self.assertTrue(all(line.startswith('"$CLI"') for line in command_lines))
+    def test_harness_contract_and_cost_classes_match_runtime(self) -> None:
+        text = self.read("HARNESS.md")
+        normalized = " ".join(text.split())
+        for phrase in (
+            '"research_workflow": "host_led_v1"',
+            '"conclusion_author": "host"',
+            '"provider_reports_role": "discovery_only"',
+            '"deep": 1',
+            '"search": 15',
+            '"free": "unlimited"',
+            "New tools enter a class, never a profile",
+            "credential is not execution readiness",
+            "budget_exhausted",
+            "targeted_reverification",
+        ):
+            self.assertIn(phrase, normalized)
 
-    def test_harness_commands_use_only_repo_local_cli(self) -> None:
-        harness = self.read("HARNESS.md")
-        bridge = self.section(harness, "## Runtime Bridge", "## Internal Binding")
+        profiles = json.loads(self.read("research_harness/budget_profiles.json"))["profiles"]
+        self.assertEqual(profiles["light"], {"deep": 0, "search": 5, "free": "unlimited"})
+        self.assertEqual(profiles["standard"], {"deep": 1, "search": 15, "free": "unlimited"})
+        self.assertEqual(profiles["heavy"], {"deep": 2, "search": 30, "free": "unlimited"})
 
-        self.assertNotIn("$PY", harness)
-        self.assertNotIn("scripts/research_state.py", harness)
-        self.assertNotIn('$ROOT/<contract>', bridge)
-        self.assertNotIn('$ROOT/<capture>', bridge)
-        self.assertIn("/absolute/path/to/confirmed-contract.json", bridge)
-        self.assertIn("/absolute/path/to/capture-file", bridge)
+        registry = load_provider_registry()
+        enabled = [provider for provider in registry["providers"] if provider["enabled"]]
+        self.assertTrue(all(provider["cost_class"] in {"deep", "search", "free"} for provider in enabled))
+        deep = sorted(
+            (provider for provider in enabled if provider["cost_class"] == "deep"),
+            key=lambda provider: provider["cost_rank"],
+        )
+        self.assertEqual([provider["id"] for provider in deep], ["perplexity", "gemini-deep", "openai-deep"])
 
-    def test_low_does_not_read_harness_before_selection(self) -> None:
-        skill = self.read("SKILL.md")
-        harness = self.read("HARNESS.md")
-        before = self.section(skill, "## Before Selection", "## After Selection")
-        normalized = " ".join(before.split())
+    def test_harness_preserves_evidence_and_gap_statuses(self) -> None:
+        text = self.read("HARNESS.md")
+        for phrase in (
+            "claim -> evidence -> source + source_origin -> raw artifact",
+            "證據不足 / EVIDENCE_INSUFFICIENT",
+            "交付不完整 / DELIVERY_INCOMPLETE",
+            "still writes `report.html`",
+            "Traditional Chinese",
+            "`檢查方式 => 預期結果`",
+        ):
+            self.assertIn(phrase, text)
 
-        self.assertIn("Low never reads or invokes the runtime", normalized)
-        self.assertIn("After Medium, High, or Ultra is selected", skill)
-        self.assertIn("Low never reads or invokes this runtime", harness)
-
-    def test_agents_and_wrappers_keep_one_protocol_with_discovery_exemption(self) -> None:
+    def test_agents_and_wrappers_keep_one_protocol(self) -> None:
         agents = self.read("AGENTS.md")
-        skill = self.read("SKILL.md")
-        self.assertIn("not a second public protocol", agents)
-        self.assertIn("Low does not read it", agents)
-        self.assertIn("required internal runtime bridge", agents)
-        self.assertIn("Host discovery may read", skill)
-        self.assertIn("not a research action", skill)
+        self.assertIn("not a second public", agents)
+        self.assertIn("conclusion author", agents)
+        self.assertIn("after profile confirmation", agents)
+        self.assertIn("do not reimplement", agents)
         for relative in (".claude/skills/deep/SKILL.md", ".agents/skills/deep/SKILL.md"):
-            with self.subTest(path=relative):
-                self.assertIn("discovery wrapper", self.read(relative).lower())
+            wrapper = self.read(relative)
+            self.assertIn("discovery wrapper", wrapper.lower())
+            self.assertIn("../../../SKILL.md", wrapper)
 
-    def test_shortfall_contract_uses_matching_human_and_html_reasons(self) -> None:
-        for relative in ("SKILL.md", "HARNESS.md"):
-            with self.subTest(path=relative):
-                text = self.read(relative)
-                self.assertIn("BLOCKED", text)
-                self.assertIn("證據不足", text)
-                self.assertIn("EVIDENCE_INSUFFICIENT", text)
-                self.assertIn("交付不完整", text)
-                self.assertIn("DELIVERY_INCOMPLETE", text)
-
-        for relative in ("README.md", "README.zh-TW.md"):
-            with self.subTest(path=relative):
-                text = self.read(relative)
-                self.assertIn("EVIDENCE_INSUFFICIENT", text)
-                self.assertIn("DELIVERY_INCOMPLETE", text)
-                self.assertIn("PASS", text)
-
-    def test_readmes_have_four_step_b6_clone_link_happy_path(self) -> None:
+    def test_readmes_explain_problem_profiles_demo_and_outputs(self) -> None:
         expectations = {
-            "README.md": (
-                "## Quickstart",
-                "## Tiers",
-                (
-                    "1. **Install the tagged skill and runtime.**",
-                    "2. **Link it to one host.**",
-                    "3. **Start a fresh session**",
-                    "4. **Type `/deep` with a research question, then choose a tier.**",
-                ),
-            ),
-            "README.zh-TW.md": (
-                "## 快速開始",
-                "## Tiers",
-                (
-                    "1. **安裝指定 tag 的完整 skill 與 runtime。**",
-                    "2. **連結到一個 host。**",
-                    "3. **開啟新的 session，**",
-                    "4. **輸入 `/deep` 與研究問題，再選擇 tier。**",
-                ),
-            ),
-        }
-
-        for relative, (heading, next_heading, steps) in expectations.items():
-            with self.subTest(path=relative):
-                text = self.read(relative)
-                quickstart = self.section(text, heading, next_heading)
-                positions = [quickstart.index(step) for step in steps]
-                self.assertEqual(positions, sorted(positions))
-                self.assertIn("v2.0.0b8", quickstart)
-                self.assertIn("python3 -m venv .venv", quickstart)
-                self.assertIn(".venv/bin/python -m pip install -e .", quickstart)
-                self.assertIn('ln -s "$PWD" "$HOME/.claude/skills/deep"', quickstart)
-                self.assertIn('ln -s "$PWD" "$HOME/.agents/skills/deep"', quickstart)
-                for tier in ("Low", "Medium", "High", "Ultra"):
-                    self.assertIn(tier, text)
-                self.assertIn("Canonical JSON", text)
-                self.assertIn("zh-Hant-TW", text)
-
-    def test_scenarios_and_binding_pin_all_four_tiers_and_conditional_ultra(self) -> None:
-        scenarios = self.read("SCENARIOS.md")
-        agents = self.read("AGENTS.md")
-        for tier in ("Low", "Medium", "High", "Ultra"):
-            with self.subTest(tier=tier):
-                self.assertIn(tier, scenarios)
-                self.assertIn(tier, agents)
-        self.assertIn("material next question inside the two-submit envelope", scenarios)
-        self.assertIn("provider uncertainty", scenarios)
-        self.assertIn("Organizer may stop", scenarios)
-
-    def test_readmes_keep_product_surface_and_hide_runtime_armor(self) -> None:
-        required_headings = {
             "README.md": (
                 "## Why This Exists",
                 "## What You Get",
                 "## How Quality Is Earned",
-                "## Architecture",
-                "## Glossary",
-                "## Quickstart",
-                "## Tiers",
+                "## Profiles",
+                "## Demo",
                 "## Outputs",
-                "## Project Links",
-                "## License",
             ),
             "README.zh-TW.md": (
                 "## 為什麼需要它",
                 "## 產出長什麼樣",
                 "## 品質怎麼來",
-                "## Architecture",
-                "## Glossary",
-                "## 快速開始",
-                "## Tiers",
+                "## Profiles",
+                "## Demo",
                 "## 輸出",
-                "## 專案連結",
-                "## License",
             ),
         }
-        engineering_terms = (
-            "summary.status",
-            "tier_contract_met",
-            "host-capture",
-            "deep-research-release-gate",
-            "wheel",
-            "sdist",
-        )
+        for relative, headings in expectations.items():
+            text = self.read(relative)
+            for heading in headings:
+                self.assertIn(heading, text)
+            self.assertLessEqual(len(text.splitlines()), 180)
+            for phrase in (
+                "Host",
+                "D1/D2",
+                "Targeted re-verification",
+                "Light",
+                "Standard",
+                "Heavy",
+                "state.json",
+                "events.jsonl",
+                "raw/",
+                "report.html",
+                "No second full Markdown" if relative == "README.md" else "不另外產生第二份完整 Markdown",
+            ):
+                self.assertIn(phrase, text)
+            self.assertNotIn("## Tiers", text)
 
-        for relative, headings in required_headings.items():
-            with self.subTest(path=relative):
-                text = self.read(relative)
-                for heading in headings:
-                    with self.subTest(heading=heading):
-                        self.assertIn(heading, text)
-                self.assertLessEqual(len(text.splitlines()), 180)
-                for term in engineering_terms:
-                    with self.subTest(term=term):
-                        self.assertNotIn(term, text.lower())
-                self.assertIn("HARNESS.md", text)
-                self.assertIn("CONTRIBUTING.md", text)
-                self.assertIn("SECURITY.md", text)
-
-    def test_readmes_share_native_architecture_and_define_product_terms(self) -> None:
-        diagrams = []
-        diagram_terms = (
-            "SKILL.md",
-            "HARNESS.md",
-            "deep-research-state CLI",
-            "research_harness/",
-            "state.json",
-            "events.jsonl",
-            "raw/",
-            "report.html",
-            "Direct capture",
-            "source_origin",
-            "evidence + exact excerpt",
-            "load-bearing claim",
-        )
-        glossary_terms = (
-            "Organizer",
-            "D1 / D2",
-            "Anti-lock-in",
-            "Direct capture",
-            "Source-origin independence",
-            "Context-separated verifier",
-        )
-
+    def test_readmes_share_native_architecture(self) -> None:
         for relative in ("README.md", "README.zh-TW.md"):
-            with self.subTest(path=relative):
-                text = self.read(relative)
-                matches = re.findall(r"```mermaid\n(.*?)\n```", text, re.DOTALL)
-                self.assertEqual(len(matches), 1)
-                diagram = matches[0]
-                diagrams.append(diagram)
-                for term in diagram_terms:
-                    self.assertIn(term, diagram)
-                glossary = self.section(text, "## Glossary", "## Quickstart" if relative == "README.md" else "## 快速開始")
-                for term in glossary_terms:
-                    self.assertIn(term, glossary)
+            text = self.read(relative)
+            start = text.index("```mermaid")
+            end = text.index("```", start + len("```mermaid"))
+            diagram = text[start:end]
+            for term in (
+                "Host Organizer",
+                "D1 / optional D2",
+                "Targeted re-verification",
+                "deep-research-state CLI",
+                "research_harness/",
+                "source_origin",
+                "state.json",
+                "report.html",
+            ):
+                self.assertIn(term, diagram)
 
-        self.assertEqual(diagrams[0], diagrams[1])
-
-    def test_readmes_link_to_bounded_examples(self) -> None:
-        examples = (
-            "examples/paired/2026-07-13-sqlite-wal-blind/",
-            "examples/paired/2026-07-13-rfc9110-ultra-blind/",
-        )
-        for relative in ("README.md", "README.zh-TW.md"):
-            with self.subTest(path=relative):
-                text = self.read(relative)
-                for example in examples:
-                    self.assertIn(example, text)
-                self.assertIn("output-level integration evidence", text)
-                self.assertIn("full-runtime", text)
-                self.assertIn("provider ranking", text)
-                if relative == "README.md":
-                    self.assertIn("not evidence of general superiority", text)
-                else:
-                    self.assertIn("不能證明普遍優於", text)
-
-        suites = {
-            examples[0]: (
-                "task.md",
-                "adjudication.md",
-                "direct-deep-research.md",
-                "deep-high.md",
-                "blind-verdict.md",
-            ),
-            examples[1]: (
-                "task.md",
-                "rubric.md",
-                "candidate-a.md",
-                "candidate-b.md",
-                "blind-verdict.md",
-                "provenance.md",
-                "README.md",
-            ),
-        }
-        for example, artifacts in suites.items():
-            for name in artifacts:
-                with self.subTest(example=example, artifact=name):
-                    self.assertTrue((ROOT / example / name).is_file())
-
-    def test_version_and_release_notes_are_current(self) -> None:
-        pyproject = self.read("pyproject.toml")
-        changelog = self.read("CHANGELOG.md")
-
-        self.assertIsNotNone(re.search(r'^version = "2\.0\.0b8"$', pyproject, re.MULTILINE))
-        b8, b7_and_historical = changelog.split("## 2.0.0b7", 1)
-        self.assertIn("## 2.0.0b8", b8)
-        self.assertIn("Python 3.9", b8)
-        b7, historical = b7_and_historical.split("## 2.0.0b6", 1)
-        self.assertIn("## 2.0.0b7", changelog)
-        for concept in (
-            "ultra",
-            "gemini",
-            "provider reports",
-            "direct capture",
-            "rfc 9110",
-            "non-ranking",
-            "false-pass",
-        ):
-            with self.subTest(concept=concept):
-                self.assertIn(concept, b7.lower())
-        b6 = historical.split("## 2.0.0b5", 1)[0]
-        self.assertIn("seven-line", b6)
-        self.assertIn("v2.0.0b6", b6)
-
-    def test_harness_execution_acceptance_and_high_verifier_rules(self) -> None:
-        harness = " ".join(self.read("HARNESS.md").split())
-        self.assertIn("Organizer/host home execution mode", harness)
-        self.assertIn("does not exclude an optional external provider route", harness)
-        self.assertIn("stage-map entry and request boundary", harness)
-        self.assertIn("apply equally to `host_native` and `external_managed`", harness)
-        self.assertIn("`檢查方式 => 預期結果`", harness)
-        self.assertIn("High MUST include a fresh, context-separated analyst pass", harness)
-        for field in (
-            "verifier_actor != candidate_actor",
-            "packet_claim_ids",
-            "recomputable `packet_sha256`",
-            "`verdict` in `accept/revise/block`",
-            "disposition",
-            "completed=true",
-            "context_separated=true",
-            "produced_candidate=false",
-        ):
-            with self.subTest(field=field):
-                self.assertIn(field, harness)
-        self.assertIn("host attestation plus canonical packet binding", harness)
-        self.assertIn("proves neither context nor source independence", harness)
-        self.assertIn("`host_native` verifier writes only the completed verifier record", harness)
-        self.assertIn("no permit or attempt event", harness)
-        self.assertIn("`external_managed` verifier additionally requires", harness)
-        self.assertIn("completed organizer-pass action", harness)
-        self.assertIn("Provider synthesis remains discovery-only", harness)
-        self.assertIn("direct captures support claims", harness)
-        self.assertIn("raw pointer remains only in canonical", harness)
-        self.assertIn("`retrieval_occurrences`/machine JSON", harness)
-
-    def test_version_metadata_matches_runtime_source(self) -> None:
-        pyproject = self.read("pyproject.toml")
-        declared = re.search(r'^version = "([^"]+)"$', pyproject, re.MULTILINE)
-        self.assertIsNotNone(declared)
-
-        from research_harness import __version__
-
-        self.assertEqual(declared.group(1), __version__)
-        self.assertEqual(__version__, "2.0.0b8")
-
-    def test_active_identity_has_no_retired_brand(self) -> None:
-        for relative in ("README.md", "README.zh-TW.md", "SKILL.md", "AGENTS.md", "HARNESS.md"):
-            with self.subTest(path=relative):
-                self.assertNotIn("claude-research-cascade", self.read(relative).lower())
-
-    def test_scenarios_use_current_posture_tier_vocabulary(self) -> None:
-        scenarios = self.read("SCENARIOS.md").lower()
-        self.assertIn("posture", scenarios)
-        self.assertIn("tier", scenarios)
-        for retired in ("three-axis", "preset: fast", "preset: standard"):
-            with self.subTest(term=retired):
-                self.assertNotIn(retired, scenarios)
-
-    def test_harness_distinguishes_credentials_from_execution_readiness(self) -> None:
-        harness = self.read("HARNESS.md").lower()
-        self.assertIn("credential", harness)
-        self.assertIn("execution readiness", harness)
-        self.assertIn("not execution readiness", harness)
-
-    def test_skill_bindings_and_source_manifest_remain_present(self) -> None:
-        skill = self.read("SKILL.md")
-        self.assertIn("Claude Code", skill)
-        self.assertIn("OpenAI Codex", skill)
-        for relative in (".claude/skills/deep/SKILL.md", ".agents/skills/deep/SKILL.md"):
-            with self.subTest(path=relative):
-                wrapper = self.read(relative)
-                self.assertIn("../../../SKILL.md", wrapper)
-                self.assertIn("name: deep", wrapper)
-
-        manifest = self.read("MANIFEST.in")
-        for required in (
-            "SKILL.md",
-            "AGENTS.md",
-            "HARNESS.md",
-            ".claude",
-            ".agents",
-            "examples/paired",
-        ):
-            with self.subTest(path=required):
-                self.assertIn(required, manifest)
-
-    def test_v2_medium_fixture_is_host_native_and_readme_is_portable(self) -> None:
-        fixture = json.loads(self.read("examples/v2/medium-contract.json"))
-        self.assertEqual(fixture["execution"], "host_native")
-        self.assertEqual(
-            fixture["confirmation"]["card_sha256"],
-            contract_card_sha256(fixture),
-        )
-
-        readme = self.read("examples/v2/README.md")
-        self.assertIn('CLI="$ROOT/.venv/bin/deep-research-state"', readme)
-        self.assertIn("intentional evidence-shortfall fixture", readme)
-        self.assertIn("`validate` exits `2`", readme)
-        self.assertIn("set -e", readme)
-        self.assertIn('"$CLI" validate "$SESSION" --json || VALIDATE_EXIT=$?', readme)
-        self.assertLess(readme.index("validate \"$SESSION\""), readme.index("render \"$SESSION\""))
-        self.assertNotIn("/Users/jechiu/dev/parallax", readme)
-        self.assertNotIn("scripts/research_state.py", readme)
-
-    def test_public_v2_example_does_not_teach_hash_confirmation_ceremony(self) -> None:
-        readme = self.read("examples/v2/README.md").lower()
-        for phrase in (
-            "run `prepare`",
-            "show the returned card",
-            "three hashes",
-            "call `confirm` only after",
-        ):
-            with self.subTest(phrase=phrase):
-                self.assertNotIn(phrase, readme)
+    def test_scenarios_pin_three_real_parallax_acceptance_questions(self) -> None:
+        text = self.read("SCENARIOS.md")
+        for profile in ("Light", "Standard", "Heavy"):
+            self.assertIn(profile, text)
+        self.assertEqual(text.count("\n/deep "), 3)
+        self.assertIn("without manual runtime repair", text)
+        self.assertIn("Provider report presented as evidence or final verdict", text)
+        self.assertIn("Withholding the package", text)
 
 
 if __name__ == "__main__":

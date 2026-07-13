@@ -281,6 +281,13 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
         human_status = shortfall_human_status
         recommendation = f"{shortfall_human_status}，暫不作肯定建議"
     ceilings = contract.get("resource_envelope", {}).get("physical_ceiling", {})
+    cost_budget = contract.get("resource_envelope", {}).get("cost_budget", {})
+    public_profile = cost_budget.get("profile") or contract.get("tier", "未記錄成本層級")
+    cost_rows = "".join(
+        f'<tr><td>{_escape(cost_class)}</td><td>{_escape(cost_budget.get(cost_class))}</td></tr>'
+        for cost_class in ("deep", "search", "free")
+        if cost_class in cost_budget
+    )
     quota_rows = "".join(
         f'<tr><td>{_escape(category)}</td><td>{_escape(count)}</td></tr>'
         for category, count in sorted(ceilings.items())
@@ -401,7 +408,7 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
   <header>
     <div class="eyebrow">研究報告</div>
     <h1>{_escape(state.get("framing", {}).get("question", "研究結果"))}</h1>
-    <div class="status-line">{_pill(contract.get("tier", "未記錄成本層級"), "status")}</div>
+    <div class="status-line">{_pill(public_profile, "status")}</div>
   </header>
   <main>
     {human_first_html}
@@ -412,11 +419,12 @@ def render_html(state: dict[str, Any], report: ValidationReport) -> str:
       <p><strong>status:</strong> <span class="verdict {status_class}">{_escape(display_status)}</span></p>
       <p><strong>posture:</strong> {_escape(contract.get("posture", "未記錄研究模式"))}</p></section>
     <section><h2>研究契約</h2><div class="meta-grid">
-      <div class="meta-card"><strong>成本層級</strong><br>{_escape(contract.get("tier"))}</div>
+      <div class="meta-card"><strong>成本檔位</strong><br>{_escape(public_profile)}</div>
       <div class="meta-card"><strong>研究模式</strong><br>{_escape(contract.get("posture"))}</div>
       <div class="meta-card"><strong>初始搜尋路由</strong><br>{_escape(contract.get("scout_route"))}</div>
       <div class="meta-card"><strong>關鍵主張下限</strong><br>{_escape(contract.get("evidence_floor", {}).get("minimum_load_bearing_claims"))}</div>
-    </div><details><summary>實體請求上限</summary><table><tbody>{quota_rows}</tbody></table></details></section>
+    </div>{f'<details><summary>成本向量</summary><table><tbody>{cost_rows}</tbody></table></details>' if cost_rows else ''}
+    <details><summary>實體請求上限</summary><table><tbody>{quota_rows}</tbody></table></details></section>
     <section><h2>正式主張</h2>{_render_claims(state)}</section>
     <section><h2>證據紀錄</h2>{_render_evidence(state)}</section>
     <section><h2>來源與起源</h2>{_render_sources(state)}</section>
@@ -483,6 +491,47 @@ def finalize_session_result(session_dir: Path, now: str) -> RenderedReport:
         validation = _validate_loaded_session(
             session_dir, state, events, event_errors, check_report=False
         )
+        exhausted_classes = sorted(
+            {
+                event.get("cost_class")
+                for event in events
+                if event.get("event") == "budget_exhausted"
+                and event.get("cost_class") in {"deep", "search"}
+            }
+        )
+        existing_gap_ids = {
+            item.get("id")
+            for item in state.get("open_questions", [])
+            if isinstance(item, dict)
+        }
+        budget_gap_operations = [
+            {
+                "op": "add",
+                "path": "/open_questions/-",
+                "value": {
+                    "id": f"budget-exhausted-{cost_class}",
+                    "question": (
+                        f"{cost_class} 類外呼預算已用盡；未解缺口僅以現有材料交付，"
+                        "需增加預算或下次重跑才能補強。"
+                    ),
+                },
+            }
+            for cost_class in exhausted_classes
+            if f"budget-exhausted-{cost_class}" not in existing_gap_ids
+        ]
+        if budget_gap_operations:
+            state = _commit_patch_unlocked(
+                session_dir,
+                budget_gap_operations,
+                state["session"]["revision"],
+                now,
+                ORGANIZER_ROOTS,
+                "organizer",
+            )
+            events, event_errors = _read_events_unlocked(session_dir)
+            validation = _validate_loaded_session(
+                session_dir, state, events, event_errors, check_report=False
+            )
         if (
             validation.integrity_ok and not validation.ok
         ):

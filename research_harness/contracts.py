@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Mapping, Optional
 
 from ._canon import (
     canonical_question,
@@ -11,6 +12,7 @@ from ._canon import (
     is_positive_count as _is_positive_count,
     sha256_hex,
 )
+from .budgets import resolve_budget_profile
 from .providers import (
     ProviderRegistryError,
     load_provider_registry,
@@ -42,6 +44,189 @@ METERED_CATEGORIES = (
     "network_experiment",
     "transport",
 )
+HOST_LED_WORKFLOW = "host_led_v1"
+
+
+def draft_host_led_contract(
+    question: str,
+    posture: str,
+    profile_name: str,
+    registry: dict[str, Any],
+    environ: Mapping[str, str],
+    *,
+    profile_path: Optional[Path] = None,
+    deep_routes: Optional[list[str]] = None,
+    search_routes: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Build one unconfirmed host-led contract from classes, not a fixed pipeline."""
+
+    profile = resolve_budget_profile(profile_name, profile_path)
+    providers = {
+        provider["id"]: provider
+        for provider in registry.get("providers", [])
+        if isinstance(provider, dict) and isinstance(provider.get("id"), str)
+    }
+
+    def ready(provider: dict[str, Any]) -> bool:
+        return provider.get("enabled") is True and all(
+            bool(environ.get(name)) for name in provider.get("required_env", [])
+        )
+
+    def eligible(provider_id: str, cost_class: str, category: str, stage: str) -> bool:
+        provider = providers.get(provider_id)
+        return bool(
+            provider
+            and ready(provider)
+            and provider.get("cost_class") == cost_class
+            and category in provider.get("action_categories", [])
+            and stage in provider.get("stage_capabilities", [])
+        )
+
+    deep_count = profile["deep"]
+    chosen_deep = list(deep_routes or [])
+    if deep_count == 0 and chosen_deep:
+        raise ValueError("light profile cannot name a deep route")
+    if deep_count > 0:
+        if not chosen_deep:
+            candidates = sorted(
+                (
+                    provider
+                    for provider in providers.values()
+                    if eligible(provider["id"], "deep", "deep", "investigation")
+                ),
+                key=lambda provider: (provider["cost_rank"], provider["id"]),
+            )
+            if not candidates:
+                raise ValueError("selected profile requires a ready deep provider")
+            chosen_deep = [candidates[0]["id"]]
+        if len(chosen_deep) not in {1, deep_count}:
+            raise ValueError("deep routes must contain one reusable route or one route per deep call")
+        if len(chosen_deep) == 1:
+            chosen_deep *= deep_count
+        for index, route in enumerate(chosen_deep):
+            stage = "investigation" if index == 0 else "anti_lock_in"
+            if not eligible(route, "deep", "deep", stage):
+                raise ValueError(f"deep route {route} is not ready for {stage}")
+
+    if search_routes is None:
+        chosen_search = sorted(
+            provider["id"]
+            for provider in providers.values()
+            if eligible(provider["id"], "search", "probe", "verification")
+        )
+    else:
+        chosen_search = list(dict.fromkeys(search_routes))
+    for route in chosen_search:
+        if not eligible(route, "search", "probe", "verification"):
+            raise ValueError(f"search route {route} is not ready for verification")
+
+    search_capacity = profile["search"] * len(chosen_search)
+    physical = {
+        "probe": search_capacity,
+        "deep": deep_count,
+        "processor": 0,
+        "network_experiment": 0,
+        "transport": 20 * deep_count,
+        "host_retrieval": 3,
+        "local": 1,
+        "organizer_pass": 1,
+    }
+    mappings: list[dict[str, Any]] = [
+        {
+            "stage": "primary_scout", "category": "host_retrieval", "route": "host-web",
+            "invocations": 1, "count": 1, "reserved": False,
+        },
+        {
+            "stage": "local_applicability", "category": "local", "route": "local",
+            "invocations": 1, "count": 1, "reserved": False,
+        },
+        {
+            "stage": "anti_lock_in", "category": "host_retrieval", "route": "host-web",
+            "invocations": 1, "count": 1, "reserved": True,
+        },
+        {
+            "stage": "verification", "category": "host_retrieval", "route": "host-web",
+            "invocations": 1, "count": 1, "reserved": True,
+        },
+        {
+            "stage": "final_inference_review", "category": "organizer_pass", "route": "host",
+            "invocations": 1, "count": 1, "reserved": True,
+        },
+    ]
+    mappings.extend(
+        {
+            "stage": "verification", "category": "probe", "route": route,
+            "invocations": profile["search"], "count": profile["search"], "reserved": True,
+        }
+        for route in chosen_search
+        if profile["search"] > 0
+    )
+    for index, route in enumerate(chosen_deep):
+        stage = "investigation" if index == 0 else "anti_lock_in"
+        mappings.extend(
+            [
+                {
+                    "stage": stage, "category": "deep", "route": route,
+                    "invocations": 1, "count": 1, "reserved": index > 0,
+                    "marginal_purpose": (
+                        "expand the primary research frame"
+                        if index == 0
+                        else "challenge or materially extend the current frame"
+                    ),
+                },
+                {
+                    "stage": stage, "category": "transport", "route": route,
+                    "invocations": 20, "count": 20, "reserved": True,
+                },
+            ]
+        )
+
+    return normalize_contract(
+        {
+            "question": question,
+            "posture": posture,
+            "tier": "custom",
+            "execution": "external_managed",
+            "durability": "canonical_package",
+            "research_workflow": HOST_LED_WORKFLOW,
+            "conclusion_author": "host",
+            "provider_reports_role": "discovery_only",
+            "scout_route": "host-web",
+            "resource_envelope": {
+                "cost_budget": profile,
+                "physical_ceiling": physical,
+                "external": {
+                    "metered_ceiling": {
+                        "probe": search_capacity,
+                        "deep": deep_count,
+                        "processor": 0,
+                        "network_experiment": 0,
+                        "transport": 0,
+                    },
+                    "max_wall_time_seconds": 7200,
+                    "allowed_endpoint_classes": [],
+                    "local_file_egress": False,
+                    "network_experiment_endpoints": [],
+                    "estimated_spend_usd": {"minimum": 0.0, "maximum": 0.0, "hard_cap": False},
+                    "raw_storage_bytes": 20 * 1024 * 1024,
+                },
+                "host": {
+                    "context_class": "standard",
+                    "admitted_characters": 32000,
+                    "estimated_tokens": 8000,
+                },
+                "local": {
+                    "admitted_output_characters": 16000,
+                    "max_wall_time_seconds": 1200,
+                    "network_egress": False,
+                },
+            },
+            "stage_permit_map": mappings,
+            "evidence_floor": {"minimum_load_bearing_claims": 1, "require_raw_artifacts": True},
+            "artifact_policy": {"default_retention": "session", "allow_provider_payloads": False},
+            "confirmation": {},
+        }
+    )
 
 
 def normalize_contract(data: dict[str, Any]) -> dict[str, Any]:
@@ -232,6 +417,73 @@ def _mapping_errors(
     return mappings
 
 
+def _host_led_budget_errors(
+    contract: dict[str, Any], registry: dict[str, Any], mappings: list[Any], errors: list[str]
+) -> None:
+    if contract.get("research_workflow") != HOST_LED_WORKFLOW:
+        return
+    if contract.get("tier") != "custom":
+        errors.append("host-led workflow uses custom tier compatibility semantics")
+    if contract.get("durability") != "canonical_package":
+        errors.append("host-led workflow requires canonical_package durability")
+    if contract.get("conclusion_author") != "host":
+        errors.append("host-led workflow requires conclusion_author=host")
+    if contract.get("provider_reports_role") != "discovery_only":
+        errors.append("host-led workflow requires provider_reports_role=discovery_only")
+
+    budget = contract.get("resource_envelope", {}).get("cost_budget")
+    if not isinstance(budget, dict):
+        errors.append("host-led workflow requires a cost budget")
+        return
+    if set(budget) != {"profile", "deep", "search", "free"}:
+        errors.append("cost budget must contain exactly profile, deep, search, and free")
+        return
+    if not isinstance(budget.get("profile"), str) or not budget["profile"]:
+        errors.append("cost budget profile must be a non-empty string")
+    for cost_class in ("deep", "search"):
+        if not _is_count(budget.get(cost_class)):
+            errors.append(f"cost budget {cost_class} must be a non-negative integer")
+    if budget.get("free") != "unlimited":
+        errors.append("cost budget free must be unlimited")
+
+    providers = {
+        provider.get("id"): provider
+        for provider in registry.get("providers", [])
+        if isinstance(provider, dict)
+    }
+    for mapping in mappings:
+        if not isinstance(mapping, dict):
+            continue
+        provider = providers.get(mapping.get("route"))
+        count = mapping.get("count")
+        if provider is None or not _is_positive_count(count):
+            continue
+        if mapping.get("category") == "deep" and provider.get(
+            "evidence_capabilities", {}
+        ).get("can_support_claims") is not False:
+            errors.append(f"deep route {mapping.get('route')} must be discovery-only")
+
+    final_passes = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping, dict)
+        and mapping.get("stage") == "final_inference_review"
+        and mapping.get("category") == "organizer_pass"
+        and mapping.get("route") == "host"
+    ]
+    if len(final_passes) != 1:
+        errors.append("host-led workflow requires one host final_inference_review mapping")
+    reverification = [
+        mapping
+        for mapping in mappings
+        if isinstance(mapping, dict)
+        and mapping.get("stage") == "verification"
+        and mapping.get("reserved") is True
+    ]
+    if not reverification:
+        errors.append("host-led workflow requires reserved targeted re-verification")
+
+
 def _reinforcement_errors(tier: Any, mappings: list[Any], errors: list[str]) -> None:
     reserved_reinforcement = [
         mapping
@@ -345,6 +597,7 @@ def _validate_contract_core(
     physical = _envelope_errors(resource, errors)
     mappings = _mapping_errors(contract, registry, physical, errors)
     _reinforcement_errors(contract.get("tier"), mappings, errors)
+    _host_led_budget_errors(contract, registry, mappings, errors)
     if contract.get("tier") == "ultra":
         _ultra_submission_errors(mappings, physical, resource, errors)
 

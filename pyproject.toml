@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-deep-research-trigger"
-version = "2.0.0b8"
+version = "2.0.0b9"
 description = "Portable, evidence-gated deep research agent skill for Claude Code and OpenAI Codex"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -58,7 +58,7 @@ Repository = "https://github.com/jechiu16/agent-deep-research-trigger"
 include = ["research_harness*", "scripts*"]
 
 [tool.setuptools.package-data]
-research_harness = ["provider_registry.json"]
+research_harness = ["provider_registry.json", "budget_profiles.json"]
 
 [tool.coverage.run]
 branch = true

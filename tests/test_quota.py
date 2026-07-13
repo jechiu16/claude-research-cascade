@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
 from research_harness.boundary import BoundaryError, execute_probe
-from research_harness.providers import load_provider_registry
+from research_harness.contracts import contract_card_sha256, normalize_contract
+from research_harness.providers import (
+    load_provider_registry,
+    provider_records_sha256,
+    provider_registry_sha256,
+    referenced_provider_records,
+)
 from research_harness.quota import (
     ContractNotConfirmed,
     DuplicateAction,
@@ -15,11 +22,13 @@ from research_harness.quota import (
     _record_attempt_status_unlocked,
     _reserve_boundary_action_unlocked,
     acquire_permits,
+    cost_usage,
     permit_usage,
 )
 from research_harness.state import new_state
-from research_harness.storage import create_session, read_events, session_lock
-from tests.helpers import NOW, confirmed_demo_contract
+from research_harness.rendering import finalize_session_result
+from research_harness.storage import create_session, load_state, read_events, session_lock
+from tests.helpers import NOW, confirmed_demo_contract, draft_host_led_contract
 
 
 class QuotaTests(unittest.TestCase):
@@ -49,6 +58,64 @@ class QuotaTests(unittest.TestCase):
 
     def _acquire_legacy(self, session: Path, action_id: str = "L1") -> None:
         acquire_permits(session, action_id, "local_applicability", "local", "local", 1, NOW)
+
+    def _make_cost_limited_session(self) -> Path:
+        registry = copy.deepcopy(self.registry)
+        demo = next(provider for provider in registry["providers"] if provider["id"] == "demo-probe")
+        demo["cost_class"] = "search"
+        demo["stage_capabilities"].append("verification")
+        contract = draft_host_led_contract()
+        contract["scout_route"] = "demo-probe"
+        physical = contract["resource_envelope"]["physical_ceiling"]
+        physical.update({category: 0 for category in physical})
+        physical.update({"probe": 2, "organizer_pass": 1})
+        contract["resource_envelope"]["external"]["metered_ceiling"].update(
+            {category: 0 for category in contract["resource_envelope"]["external"]["metered_ceiling"]}
+        )
+        contract["resource_envelope"]["cost_budget"] = {
+            "profile": "light",
+            "deep": 0,
+            "search": 1,
+            "free": "unlimited",
+        }
+        contract["stage_permit_map"] = [
+            {
+                "stage": "primary_scout",
+                "category": "probe",
+                "route": "demo-probe",
+                "invocations": 1,
+                "count": 1,
+                "reserved": False,
+            },
+            {
+                "stage": "verification",
+                "category": "probe",
+                "route": "demo-probe",
+                "invocations": 1,
+                "count": 1,
+                "reserved": True,
+            },
+            {
+                "stage": "final_inference_review",
+                "category": "organizer_pass",
+                "route": "host",
+                "invocations": 1,
+                "count": 1,
+                "reserved": True,
+            },
+        ]
+        contract = normalize_contract(contract)
+        records = referenced_provider_records(contract, registry)
+        contract["confirmation"] = {
+            "confirmed_by": "user",
+            "confirmed_at": NOW,
+            "card_sha256": contract_card_sha256(contract),
+            "registry_sha256": provider_registry_sha256(registry),
+            "referenced_records_sha256": provider_records_sha256(records),
+        }
+        session = self.root / "cost-limited"
+        create_session(session, new_state(contract, NOW, registry, {}))
+        return session
 
     def test_unconfirmed_contract_cannot_acquire(self) -> None:
         state_path = self.session / "state.json"
@@ -89,6 +156,27 @@ class QuotaTests(unittest.TestCase):
         with self.assertRaises(BoundaryError):
             execute_probe(self.session, "A2", "primary_scout", "demo-probe", "q", NOW)
         self._acquire_legacy(self.session)
+
+    def test_cost_budget_stops_second_external_call_without_consuming_it(self) -> None:
+        session = self._make_cost_limited_session()
+        execute_probe(session, "A1", "primary_scout", "demo-probe", "q1", NOW)
+        with self.assertRaisesRegex(BoundaryError, "cost budget exhausted for search"):
+            execute_probe(session, "A2", "verification", "demo-probe", "q2", NOW)
+        self.assertEqual(cost_usage(session), {"deep": 0, "search": 1, "free": 0})
+        self.assertEqual(permit_usage(session)["probe"], 1)
+        events, errors = read_events(session)
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            sum(event.get("event") == "budget_exhausted" for event in events), 1
+        )
+
+        rendered = finalize_session_result(session, NOW)
+        state = load_state(session)
+        gap = next(
+            item for item in state["open_questions"] if item["id"] == "budget-exhausted-search"
+        )
+        self.assertIn("現有材料交付", gap["question"])
+        self.assertTrue(rendered.path.exists())
 
     def test_action_id_conventions_and_path_safety_are_enforced_by_boundary(self) -> None:
         for action_id in ("A1", "D1", "CL6"):

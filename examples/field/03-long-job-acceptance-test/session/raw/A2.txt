@@ -1,0 +1,17 @@
+    def test_falsifier_timeout_kills_hung_step(self) -> None:
+        """Plan success criterion 4: a hung step is killed at its deadline
+        and the job continues with an honest verdict."""
+        steps = [
+            _step("hang", "import time; time.sleep(60)", timeout_s=2),
+            _step("after", "print('still ran')"),
+        ]
+        started = time.monotonic()
+        rc = self._run(steps)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 40)  # not 60s — the hang was killed
+        self.assertEqual(rc, Verdict.FAIL.process_exit_code)
+        record = self._ledger_runs()[0]
+        hang = record["steps"][0]
+        self.assertTrue(hang["timed_out"])
+        self.assertEqual(hang["verdict"], "fail")
+        self.assertEqual(record["steps"][1]["verdict"], "pass")  # pipeline continued

@@ -1,0 +1,10 @@
+Hard guarantees the legacy shell wrappers could not make:
+
+- every step runs in its own process group with a hard timeout; a hung
+  fetch is killed, recorded, and the job continues honestly
+- a crashed run still writes its final status (try/finally) — no more
+  ops_status stuck at "running" after a mid-run death
+- a lock left behind by a dead process is detected (pid liveness) and
+  taken over with a notification, instead of blocking every subsequent
+  night until a human notices
+- the run ledger is appended before the process exits, success or not

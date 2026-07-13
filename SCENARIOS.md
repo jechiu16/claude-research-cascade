@@ -1,83 +1,61 @@
-# Agent Deep Research Trigger — Scenario Calibration
+# /deep Field Scenarios
 
-Use these scenarios to evaluate `/deep` behavior. They are posture and tier
-calibrations, not fixed provider pipelines. Host-native search/fetch and local
-inspection are the default; provider keys are optional.
+Calibrate one host-led workflow at three cost profiles. Profiles change counts,
+not authorship or evidence rules.
 
-## Expected decisions
+## Expected Behavior
 
-| Scenario | Posture | Typical tier | Required behavior |
-|---|---|---|---|
-| `/deep What license does this repo use?` | `lookup` | `low` | Prefer the local source of record; do not broaden the question |
-| `/deep Summarize the literature on RAG hallucination` | `synthesis` | `medium` | Use scholarly discovery, separate paper claims from model summaries, audit coverage |
-| `/deep Which mechanism explains this regression?` | `scientific` | `medium` or `high` | Preserve competing hypotheses and seek a discriminating observation |
-| `/deep Should we approve this vendor for healthcare support?` | `decision` | `high` | Verify load-bearing premises across source families and use context-separated verification |
-| `/deep Which bounded approach should we ship when one material unknown remains?` | `decision` | `ultra` | Run High plus an adaptive Deep loop; Organizer may use D2 for a material next question inside the two-submit envelope, never a parallel provider bundle |
-| `/deep` after a long conversation | inferred | inferred | Infer the likely target; ask only when ambiguity would change the contract |
-| Missing provider keys | unchanged | unchanged | Continue with host-native/local work when sufficient; otherwise explain the unavailable evidence and offer a substitution |
-| Local files plus web context | task-dependent | task-dependent | Obtain explicit external-egress authority before sending local content |
-| Conflicting sources | unchanged | unchanged | Mark the claim disputed and spend only if the dispute is load-bearing |
-| Host crash during async research | unchanged | unchanged | If an accepted or uncertain job has a provider token, resume it with a new poll action. A recovered attempted job without a token is consumed, non-pollable, requires manual inspection, and must never be resubmitted |
+| Scenario | Suggested profile | Why |
+|---|---|---|
+| Local source-of-record lookup | Light | Direct local/free evidence should settle it. |
+| Development decision with external uncertainty | Standard | One D1 adds breadth before focused checks. |
+| Ambiguous, high-impact decision | Heavy | A second deep angle may materially challenge or expand D1. |
+| Missing provider key | Same or cheaper | A credential is not readiness; stop or use disclosed ready/free routes. |
+| Conflicting sources | Any | Correct the claim or mark the dispute and flip condition. |
+| Budget exhausted | Any | Send nothing further; annotate the gap and deliver existing materials. |
+| Async host crash | Standard/Heavy | Resume a recorded token; never resubmit a consumed action. |
 
-## Required interaction shape
+## Interaction Shape
 
-Every scenario follows the same public interaction shape:
+1. Literal `/deep` trigger.
+2. One card with Query Brief and `light`, `standard`, `heavy` count vectors.
+3. One user choice; background execution starts.
+4. D1/D2 return discovery memos to the host, not conclusions.
+5. Host chooses targeted re-verification, fixes or annotates findings, and writes the conclusion.
+6. Canonical JSON and Traditional Chinese HTML are delivered even with evidence gaps.
 
-1. The literal `/deep` trigger identifies the research target.
-2. The Organizer recommends a tier with one reason and waits for exactly one
-  `Low`, `Medium`, `High`, or `Ultra` choice.
-3. Host-native and local actions are preferred; Medium adapts to the named gap,
-   while High obtains multiple direct sources.
-4. Paid requests reserve their exact physical multiplicity atomically inside the
-   request boundary. The legacy `permit` command is only for host, local, and
-   Organizer actions.
-5. Semantic truth lives only in canonical `state.json`; events and raw bytes
-   retain their own operational roles.
-6. `validate` must pass before `render` can deliver a `PASS` report.
+## Parallax Acceptance Questions
 
-Ultra starts D1, consumes its full report with session context, and reuses High
-for direct evidence plus coverage and anti-lock-in. The Organizer may stop or
-use D2 inside the confirmed two-submit envelope for a material next question,
-whether a gap or a justified expansion/alternate angle; provider uncertainty
-alone is not a trigger. D2 is incremental High work, not a repeated pipeline.
-
-## Evaluation prompts
+Run these consecutively without manual runtime repair:
 
 ```text
-/deep Compare SQLite and DuckDB as the default local analytics engine for a
-Python desktop application.
+/deep Should Parallax use SQLite or DuckDB as its default local analytics engine?
 ```
 
-Pass condition: recommends a decision-appropriate bounded tier, checks
-local applicability, separates evidence from inference, and names a flip
-condition.
+Pass: inspect current local constraints, verify the decisive external facts,
+name a reversible implementation and flip condition.
 
 ```text
-/deep What does the literature say about whether retrieval-augmented generation
-reduces hallucinations in question-answering systems?
+/deep Which cache invalidation boundary in Parallax is most likely to prevent stale regime data without increasing coupling?
 ```
 
-Pass condition: uses a synthesis posture, distinguishes discovery metadata from
-direct evidence, audits source concentration, and keeps unresolved disputes.
+Pass: preserve competing explanations, inspect the repo, and distinguish local
+observations from external design guidance.
 
 ```text
-/deep Is this AI vendor safe enough for a HIPAA-adjacent support workflow?
+/deep What is the smallest reliable acceptance test for Parallax's next long-running pipeline change?
 ```
 
-Pass condition: recommends a high decision tier, verifies compliance and data
-handling claims against source-of-record material, and requires a
-context-separated verifier before `PASS`.
+Pass: connect source evidence to current code, produce an executable check, and
+state what remains unverified when the budget stops.
 
-## Anti-patterns
+## Anti-Patterns
 
-- Triggering on ordinary research language when the user did not type `/deep`.
-- Starting research before the user chooses one tier.
-- Treating a present credential as execution readiness.
-- Treating a credential or provider route as required when host-native work is
-  sufficient.
-- Treating a failed or uncertain paid request as refundable.
-- Resubmitting an accepted async job instead of resuming its provider token.
-- Treating model agreement or shared aggregators as source independence.
-- Letting the Organizer write retrieval occurrences as prose.
-- Maintaining a second full Markdown state beside canonical `state.json`.
-- Delivering `PASS` when validation is false or lineage is incomplete.
+- Research before profile confirmation.
+- Provider report presented as evidence or final verdict.
+- Automatic D1/D2 provider bundle.
+- Token estimates presented as hard cost control.
+- Silent over-budget call or route/egress expansion.
+- Model agreement presented as source-origin independence.
+- Withholding the package because the answer is uncertain.
+- A second full Markdown report beside canonical JSON.

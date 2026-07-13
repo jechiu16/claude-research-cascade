@@ -1,0 +1,1 @@
+**Retire SQLite entirely. DuckDB becomes the sole source of truth for the ledger.** All existing SQLite data is discarded on cutover. No data migration is performed.

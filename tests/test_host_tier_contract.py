@@ -12,7 +12,7 @@ from research_harness.rendering import finalize_session_result, render_session_r
 from research_harness.state import new_state
 from research_harness.storage import apply_state_patch, create_session, load_state, read_events
 from research_harness.validation import validate_session
-from tests.helpers import NOW, confirmed_contract
+from tests.helpers import NOW, confirmed_contract, confirmed_host_led_contract
 
 
 class HostTierContractTests(unittest.TestCase):
@@ -21,6 +21,79 @@ class HostTierContractTests(unittest.TestCase):
         self.addCleanup(self.tempdir.cleanup)
         self.root = Path(self.tempdir.name)
         self.session = self._make_session("medium", axes=True)
+
+    def test_host_led_delivery_requires_dispositioned_targeted_reverification(self) -> None:
+        session = self.root / "host-led-reverification"
+        create_session(session, new_state(confirmed_host_led_contract(), NOW, None, {}))
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {"op": "replace", "path": "/summary/status", "value": "BLOCKED"},
+                {"op": "replace", "path": "/summary/human_status", "value": "證據不足"},
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+        missing = validate_session(session)
+        self.assertIn(
+            "tier.targeted_reverification_missing",
+            {issue.code for issue in missing.warnings},
+        )
+
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {
+                    "op": "add",
+                    "path": "/verification/-",
+                    "value": {
+                        "id": "VR-invalid",
+                        "kind": "targeted_reverification",
+                        "completed": True,
+                        "checked_claim_ids": [],
+                        "corrected_claim_ids": ["C-not-checked"],
+                        "unverifiable_claim_ids": [],
+                        "disposition": "References a claim outside the checked packet.",
+                    },
+                }
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+        invalid = validate_session(session)
+        self.assertIn(
+            "tier.targeted_reverification_missing",
+            {issue.code for issue in invalid.warnings},
+        )
+
+        state = load_state(session)
+        apply_state_patch(
+            session,
+            [
+                {
+                    "op": "add",
+                    "path": "/verification/-",
+                    "value": {
+                        "id": "VR-valid",
+                        "kind": "targeted_reverification",
+                        "completed": True,
+                        "checked_claim_ids": [],
+                        "corrected_claim_ids": [],
+                        "unverifiable_claim_ids": [],
+                        "disposition": "No load-bearing claims survived the evidence review.",
+                    },
+                }
+            ],
+            state["session"]["revision"],
+            NOW,
+        )
+        complete = validate_session(session)
+        self.assertNotIn(
+            "tier.targeted_reverification_missing",
+            {issue.code for issue in complete.issues},
+        )
 
     def _capture(
         self,
@@ -202,8 +275,26 @@ class HostTierContractTests(unittest.TestCase):
 
     def test_host_capture_rejects_external_managed_contract(self) -> None:
         self.session = self._make_session("medium", axes=False)
-        with self.assertRaisesRegex(ArtifactPolicyError, "host-native"):
+        with self.assertRaisesRegex(ArtifactPolicyError, "host-led"):
             self._capture("HC1", "https://example.test/source", b"direct finding")
+
+    def test_host_capture_accepts_bound_host_led_contract(self) -> None:
+        self.session = self.root / "host-led-capture"
+        create_session(self.session, new_state(confirmed_host_led_contract(), NOW, None, {}))
+
+        artifact = self._capture(
+            "HC1",
+            "https://example.test/source",
+            b"direct host finding",
+            purpose="targeted re-verification of C1",
+        )
+
+        self.assertEqual(artifact["provenance"]["origin_kind"], "host_capture")
+        self.assertEqual(
+            artifact["host_capture"]["marginal_purpose"],
+            "targeted re-verification of C1",
+        )
+        self.assertTrue(validate_session(self.session).integrity_ok)
 
     def test_organizer_cannot_patch_contract_semantics_marker(self) -> None:
         from research_harness.storage import ProtectedStatePath

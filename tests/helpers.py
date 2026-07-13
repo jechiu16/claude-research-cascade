@@ -148,6 +148,42 @@ def confirmed_medium_contract(
     return contract
 
 
+def draft_host_led_contract() -> dict[str, Any]:
+    contract = draft_medium_contract()
+    contract.update(
+        {
+            "tier": "custom",
+            "research_workflow": "host_led_v1",
+            "conclusion_author": "host",
+            "provider_reports_role": "discovery_only",
+            "durability": "canonical_package",
+        }
+    )
+    contract["resource_envelope"]["cost_budget"] = {
+        "profile": "standard",
+        "deep": 1,
+        "search": 15,
+        "free": "unlimited",
+    }
+    return contract
+
+
+def confirmed_host_led_contract(
+    registry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved = copy.deepcopy(load_provider_registry() if registry is None else registry)
+    contract = normalize_contract(draft_host_led_contract())
+    records = referenced_provider_records(contract, resolved)
+    contract["confirmation"] = {
+        "confirmed_by": "user",
+        "confirmed_at": NOW,
+        "card_sha256": contract_card_sha256(contract),
+        "registry_sha256": provider_registry_sha256(resolved),
+        "referenced_records_sha256": provider_records_sha256(records),
+    }
+    return contract
+
+
 def confirmed_contract(
     tier: str = "medium",
     posture: str = "lookup",

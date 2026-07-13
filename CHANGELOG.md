@@ -3,6 +3,37 @@
 All notable changes to this project are documented here. The project follows
 Semantic Versioning once the v2 runtime leaves development status.
 
+## 2.0.0b9
+
+### Added
+
+- User-controlled Light, Standard, and Heavy call-count profiles over `deep`,
+  `search`, and unlimited `free` cost classes. Provider choice remains in the
+  registry and Deep candidates are price-ranked.
+- A host-led contract draft path, targeted re-verification records, and
+  budget-exhaustion annotations that stop further external calls without
+  withholding the existing package.
+- Three retained Parallax field packages covering a source-of-record decision,
+  a corrected problem framing, and a long-job acceptance-test design.
+
+### Changed
+
+- The host is explicitly the sole conclusion author. D1/D2 reports are
+  discovery-only and buy breadth or structure, never claim authority.
+- The public skill and harness are shorter; delivery is canonical JSON plus a
+  deterministic Traditional Chinese HTML report, without a second full
+  Markdown report.
+- The first interaction is one Query Brief confirmation card with the exact
+  budget vectors and ready provider candidates.
+
+### Fixed
+
+- Cost enforcement now counts actual event classes and records a single
+  machine-readable gap when a `deep` or `search` limit is exhausted.
+- Bound host-led contracts can persist exact host WebSearch/fetch bytes through
+  `host-capture`; unrelated external-managed contracts remain rejected.
+- CLI test isolation no longer depends on a side-effect import alias.
+
 ## 2.0.0b8
 
 ### Fixed

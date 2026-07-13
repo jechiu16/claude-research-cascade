@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from ._canon import RETENTION_RANK, canonical_source_key, indexed, sha256_hex
 from .artifacts import MEDIA_EXTENSIONS, SCANNER_VERSION
 from .contracts import METERED_CATEGORIES
+from .providers import action_cost_class
 from .quota import ATTEMPT_TRANSITIONS, BOUNDARY_CATEGORIES, HASH64_RE
 from .state import state_sha256, validate_state_document
 from .state import CONTRACT_SEMANTICS_V3
@@ -52,6 +53,7 @@ DELIVERY_SHORTFALL_CODES = frozenset(
         "tier.ultra_deep_second_completed_missing",
         "tier.anti_lock_in_missing",
         "tier.coverage_audit_missing",
+        "tier.targeted_reverification_missing",
         "posture.decision_joint_missing",
     }
 )
@@ -346,6 +348,27 @@ def _validate_quota(
         ceiling = ceilings.get(category)
         if not isinstance(ceiling, int) or isinstance(ceiling, bool) or used > ceiling:
             _add(issues, "quota.exceeded", f"physical ceiling exceeded for {category}", "/events")
+
+    cost_budget = contract.get("resource_envelope", {}).get("cost_budget")
+    if isinstance(cost_budget, dict):
+        cost_usage = {"deep": 0, "search": 0}
+        for permit in permits:
+            provider = providers.get(permit.get("route"))
+            count = permit.get("count")
+            if provider is None or not isinstance(count, int) or isinstance(count, bool):
+                continue
+            cost_class = action_cost_class(provider, str(permit.get("category")))
+            if cost_class in cost_usage:
+                cost_usage[cost_class] += count
+        for cost_class, used in cost_usage.items():
+            ceiling = cost_budget.get(cost_class)
+            if not isinstance(ceiling, int) or isinstance(ceiling, bool) or used > ceiling:
+                _add(
+                    issues,
+                    "quota.cost_exceeded",
+                    f"cost budget exceeded for {cost_class}",
+                    "/events",
+                )
 
 
 def _confined_artifact_path(session_dir: Path, relative_path: Any) -> Path | None:
@@ -1091,7 +1114,7 @@ def _canonical_handoff_completeness(
         _add(
             issues,
             "tier.acceptance_tests_missing",
-            "Medium, High, and Ultra canonical packages require at least one acceptance test formatted as 'check => expected' or 'check -> expected'",
+            "canonical packages require at least one acceptance test formatted as 'check => expected' or 'check -> expected'",
             "/engineering_handoff/acceptance_tests",
             "WARNING",
         )
@@ -1300,9 +1323,10 @@ def _canonical_delivery_tier_contract(
     issues: list[Issue],
 ) -> bool:
     contract = state.get("contract", {})
+    host_led = contract.get("research_workflow") == "host_led_v1"
     if (
         contract.get("durability") != "canonical_package"
-        or contract.get("tier") not in {"medium", "high", "ultra"}
+        or (contract.get("tier") not in {"medium", "high", "ultra"} and not host_led)
     ):
         return True
 
@@ -1312,7 +1336,7 @@ def _canonical_delivery_tier_contract(
         _add_once(
             issues,
             "tier.terminal_status_missing",
-            "Medium, High, and Ultra canonical packages require a terminal summary status",
+            "canonical packages require a terminal summary status",
             "/summary/status",
             "WARNING",
         )
@@ -1361,7 +1385,44 @@ def _canonical_delivery_tier_contract(
     deep_met = True
     if contract.get("tier") == "ultra":
         deep_met = _ultra_trace_validator(state, events, issues, valid_verifiers)
-    return load_set_met and handoff_met and verifier_met and deep_met
+    reverification_met = True
+    if host_led:
+        load_ids = summary.get("load_bearing_claim_ids")
+
+        def disposition_ids_are_valid(record: dict[str, Any]) -> bool:
+            if not isinstance(load_ids, list):
+                return False
+            for field in ("corrected_claim_ids", "unverifiable_claim_ids"):
+                values = record.get(field)
+                if (
+                    not isinstance(values, list)
+                    or not all(isinstance(value, str) and value in load_ids for value in values)
+                    or len(values) != len(set(values))
+                ):
+                    return False
+            return True
+
+        valid_records = [
+            record
+            for record in state.get("verification", [])
+            if isinstance(record, dict)
+            and record.get("kind") == "targeted_reverification"
+            and record.get("completed") is True
+            and record.get("checked_claim_ids") == load_ids
+            and disposition_ids_are_valid(record)
+            and isinstance(record.get("disposition"), str)
+            and bool(record["disposition"].strip())
+        ]
+        reverification_met = bool(valid_records)
+        if not reverification_met:
+            _add_once(
+                issues,
+                "tier.targeted_reverification_missing",
+                "host-led delivery requires a completed targeted re-verification record",
+                "/verification",
+                "ERROR" if status == "PASS" else "WARNING",
+            )
+    return load_set_met and handoff_met and verifier_met and deep_met and reverification_met
 
 
 def _validate_pass(

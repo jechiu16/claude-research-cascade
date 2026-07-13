@@ -94,7 +94,7 @@ class RenderingTests(unittest.TestCase):
             "研究狀態",
             "有界結論",
             "研究契約",
-            "成本層級",
+            "成本檔位",
             "研究模式",
             "初始搜尋路由",
             "實體請求上限",

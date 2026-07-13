@@ -1,0 +1,6 @@
+    # Single transaction across all row updates (2026-06-13 fleet patrol):
+    # the per-row autocommit loop left regime_history in a mixed
+    # z_scores_version state if the run was killed mid-way — readable by
+    # the Mahalanobis historian until the next full re-run.
+    if not dry_run:
+        conn.execute("BEGIN TRANSACTION")

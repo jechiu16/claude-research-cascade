@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .contracts import ACTION_CATEGORIES, METERED_CATEGORIES, contract_card_sha256
-from .providers import preflight_contract_routes, provider_records_sha256
+from .providers import action_cost_class, preflight_contract_routes, provider_records_sha256
 from .state import CONTRACT_SEMANTICS_V3, validate_state_document
 from .storage import (
     _append_event_unlocked,
@@ -107,6 +107,72 @@ def permit_usage(session_dir: Path) -> dict[str, int]:
         return _usage_from_events(events)
 
 
+def _cost_usage_from_events(
+    events: list[dict[str, Any]], providers: list[dict[str, Any]]
+) -> dict[str, int]:
+    by_id = {provider.get("id"): provider for provider in providers if isinstance(provider, dict)}
+    usage = {"deep": 0, "search": 0, "free": 0}
+    for event in _permit_events(events):
+        provider = by_id.get(event.get("route"))
+        count = event.get("count")
+        if provider is None or not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+            continue
+        cost_class = action_cost_class(provider, str(event.get("category")))
+        if cost_class in usage:
+            usage[cost_class] += count
+    return usage
+
+
+def cost_usage(session_dir: Path) -> dict[str, int]:
+    session_dir = Path(session_dir)
+    with session_lock(session_dir):
+        _recover_session_unlocked(session_dir)
+        state = _load_state_unlocked(session_dir)
+        events, errors = _read_events_unlocked(session_dir)
+        if errors:
+            raise QuotaError("event history is malformed")
+        return _cost_usage_from_events(events, state.get("capabilities", {}).get("providers", []))
+
+
+def _assert_cost_budget(
+    session_dir: Path,
+    state: dict[str, Any],
+    events: list[dict[str, Any]],
+    provider: dict[str, Any],
+    category: str,
+    count: int,
+    now: str,
+) -> None:
+    budget = state.get("contract", {}).get("resource_envelope", {}).get("cost_budget")
+    if not isinstance(budget, dict):
+        return
+    cost_class = action_cost_class(provider, category)
+    if cost_class == "free":
+        return
+    ceiling = budget.get(cost_class)
+    usage = _cost_usage_from_events(
+        events, state.get("capabilities", {}).get("providers", [])
+    )
+    if not isinstance(ceiling, int) or isinstance(ceiling, bool) or usage[cost_class] + count > ceiling:
+        if not any(
+            event.get("event") == "budget_exhausted" and event.get("cost_class") == cost_class
+            for event in events
+        ):
+            _append_event_unlocked(
+                session_dir,
+                {
+                    "event": "budget_exhausted",
+                    "at": now,
+                    "cost_class": cost_class,
+                    "used": usage[cost_class],
+                    "ceiling": ceiling,
+                    "rejected_route": provider.get("id"),
+                    "rejected_category": category,
+                },
+            )
+        raise QuotaExceeded(f"cost budget exhausted for {cost_class}")
+
+
 def acquire_permits(
     session_dir: Path,
     action_id: str,
@@ -162,6 +228,7 @@ def acquire_permits(
         )
         if provider is None or not provider.get("enabled"):
             raise QuotaExceeded(f"route {route} is not enabled")
+        _assert_cost_budget(session_dir, state, events, provider, category, count, now)
         multiplicity = provider.get("request_multiplicity", {}).get(category)
         if count != multiplicity:
             raise QuotaExceeded(f"route {route} requires {multiplicity} physical requests per invocation")
@@ -326,6 +393,7 @@ def _reserve_boundary_action_unlocked(
     )
     if provider is None or provider.get("enabled") is not True:
         raise QuotaExceeded(f"route {route} is not enabled")
+    _assert_cost_budget(session_dir, state, events, provider, category, count, now)
     multiplicity = provider.get("request_multiplicity", {}).get(category)
     if count != multiplicity:
         raise QuotaExceeded(f"route {route} requires {multiplicity} physical requests per invocation")
