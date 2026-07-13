@@ -8,6 +8,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -21,6 +22,27 @@ def run(label: str, command: list[str]) -> dict:
     if completed.returncode:
         raise RuntimeError(f"{label} failed with exit code {completed.returncode}")
     return {"name": label, "status": "passed"}
+
+
+def check_sdist_field_package(artifacts: list[str]) -> dict:
+    sdist = next((Path(path) for path in artifacts if path.endswith(".tar.gz")), None)
+    if sdist is None:
+        raise RuntimeError("sdist field package check requires a .tar.gz artifact")
+    with tarfile.open(sdist, "r:gz") as archive:
+        names = archive.getnames()
+    required_suffixes = (
+        "examples/field/04-duckdb-concurrency-boundary/session/state.json",
+        "examples/field/04-duckdb-concurrency-boundary/session/events.jsonl",
+        "examples/field/04-duckdb-concurrency-boundary/session/report.html",
+        "examples/field/04-duckdb-concurrency-boundary/session/raw/A1.bin",
+        "examples/field/04-duckdb-concurrency-boundary/session/raw/A2.bin",
+    )
+    missing = [suffix for suffix in required_suffixes if not any(name.endswith(suffix) for name in names)]
+    if missing:
+        raise RuntimeError("sdist is missing field package files: " + ", ".join(missing))
+    if any("/provider_spool/" in name for name in names):
+        raise RuntimeError("sdist must not contain provider_spool payloads")
+    return {"name": "sdist field package", "status": "passed"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
             shutil.rmtree(generated, ignore_errors=True)
         checks.append(run("build distributions", [python, "-m", "build"]))
         artifacts = sorted(str(path) for path in (ROOT / "dist").iterdir())
+        checks.append(check_sdist_field_package(artifacts))
         checks.append(run("distribution metadata", [python, "-m", "twine", "check", *artifacts]))
         checks.append(run("dependency audit", [python, "-m", "pip_audit", "--skip-editable"]))
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:

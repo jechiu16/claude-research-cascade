@@ -1,0 +1,66 @@
+def build_forecast_panel(db_path: str | Path, run_date: date) -> ForecastPanelData:
+    """Assemble the forecast panel payload for ``run_date``.
+
+    Opens a read-only DuckDB connection for the direct queries in this module
+    (quantiles, history, hedge churn, regime flips), then CLOSES it before
+    calling ``DuckDBLedgerRepository.load_forecast_component_gates`` /
+    ``.load_forecast_residual_share`` — those open their own short-lived
+    read-write connections (existing, unmodified interface), and DuckDB
+    refuses a second connection to the same file with a different
+    read_only configuration while the first is still open. Never raises —
+    missing tables / empty results degrade into ``data_status`` +
+    ``degradation_reasons``.
+    """
+    conn = duckdb.connect(str(db_path), read_only=True)
+    try:
+        data_run_date = _latest_combined_run_date(conn, run_date)
+        if data_run_date is None:
+            return ForecastPanelData(
+                requested_run_date=run_date,
+                data_run_date=None,
+                data_status="no_data",
+                degradation_reasons=[
+                    f"no forecast_runs rows for component={FORECAST_COMPONENT!r} "
+                    f"on or before {run_date.isoformat()}"
+                ],
+            )
+
+        reasons: list[str] = []
+        quantiles_by_series = _load_combined_quantiles(conn, data_run_date)
+        history_by_series, history_reason = _load_history(conn, data_run_date)
+        if history_reason:
+            reasons.append(history_reason)
+
+        series: dict[str, SeriesForecast] = {}
+        for sid in TARGET_SERIES:
+            q = quantiles_by_series.get(sid, {})
+            if not q:
+                reasons.append(
+                    f"no combined quantile rows for series_id={sid!r} "
+                    f"at run_date={data_run_date.isoformat()}"
+                )
+            elif set(q) != set(HORIZON_DAYS):
+                missing = sorted(set(HORIZON_DAYS) - set(q))
+                reasons.append(
+                    f"series_id={sid!r} missing horizon_day(s) {missing} "
+                    f"at run_date={data_run_date.isoformat()}"
+                )
+            hist = history_by_series.get(sid, [])
+            if not hist:
+                reasons.append(f"no historical actuals for series_id={sid!r}")
+            series[sid] = SeriesForecast(series_id=sid, quantiles=q, history=hist)
+
+        conn_badge_inputs, conn_badge_reason = _load_conn_badge_inputs(conn, data_run_date)
+    finally:
+        conn.close()
+
+    # repo_badge_inputs MUST run after conn.close() above — DuckDBLedgerRepository
+    # opens its own read-write connection, which DuckDB rejects while our
+    # read_only connection to the same file is still live.
+    repo_badge_inputs, repo_badge_reason = _load_repo_badge_inputs(db_path, data_run_date)
+    badges = compute_badges(
+        component_gates=repo_badge_inputs["component_gates"],
+        hedge_churn_7d=conn_badge_inputs["hedge_churn_7d"],
+        hedge_churn_30d=conn_badge_inputs["hedge_churn_30d"],
+        regime_flips_30d=conn_badge_inputs["regime_flips_30d"],
+        residual_share=repo_badge_inputs["residual_share"],

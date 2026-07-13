@@ -184,6 +184,29 @@ class RenderingTests(unittest.TestCase):
 
         self.assertIn("<p>上下文分離：未記錄</p>", document)
 
+    def test_verification_renders_per_claim_dispositions(self) -> None:
+        state = copy.deepcopy(self.state)
+        state["verification"][0].update(
+            {
+                "checked_claim_ids": ["C-accepted", "C-corrected", "C-unverified"],
+                "corrected_claim_ids": ["C-corrected"],
+                "unverifiable_claim_ids": ["C-unverified"],
+                "disposition": "逐項複驗後保留、修正或標註承重主張。",
+            }
+        )
+
+        document = render_html(state, self.report)
+
+        for fragment in (
+            "複驗 disposition",
+            "accepted / 接受",
+            "corrected / 已修正",
+            "unverified / 無法驗證",
+            "逐項複驗後保留、修正或標註承重主張。",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, document)
+
     def test_renderer_owned_missing_value_fallbacks_are_traditional_chinese(self) -> None:
         state = copy.deepcopy(self.state)
         state["claims"] = [{}]

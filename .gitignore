@@ -10,3 +10,4 @@ __pycache__/
 build/
 dist/
 reports/
+examples/field/*/session/provider_spool/

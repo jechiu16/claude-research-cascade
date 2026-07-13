@@ -120,13 +120,15 @@ D1：最低成本 ready provider；研究問題可外送，本機檔案不外送
 
 ## 實戰驗收
 
-三個真實 Parallax 問題連續以 Light 跑完，全部 `PASS`，Deep 與 Search
-呼叫皆為零。每份 package 都保留確認卡、canonical JSON、hash-chained
-events、raw evidence 與繁體中文 HTML。
+四個真實 Parallax 問題全部 `PASS`。前三題以 Light 驗證低成本路徑；第四題
+以 Standard 實際完成 `deep=1`、`search=1`、外部 direct capture、逐 claim
+disposition 與繁體中文 HTML。這一跑也修正了 D1 對 Quack 的過度絕對 framing。
 
 - [DuckDB source of truth](examples/field/01-duckdb-source-of-truth/session/report.html)
 - [Regime staleness boundary](examples/field/02-regime-staleness-boundary/session/report.html)
 - [Long-job acceptance test](examples/field/03-long-job-acceptance-test/session/report.html)
+- [DuckDB concurrency boundary](examples/field/04-duckdb-concurrency-boundary/session/report.html)
+- [Decision delta 與 tier calibration](examples/field/04-duckdb-concurrency-boundary/decision-delta.md)
 - [驗收筆記](examples/field/README.md)
 
 ## 輸出

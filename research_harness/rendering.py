@@ -198,14 +198,40 @@ def _render_verification(state: dict[str, Any]) -> str:
     records = state.get("verification", [])
     if not records:
         return _empty("尚未記錄驗證")
-    return '<div class="verification-grid">' + "".join(
-        '<article class="verification">'
-        f'<code>{_escape(item.get("id"))}</code><h3>{_escape(item.get("kind", "未記錄驗證類型"))}</h3>'
-        f'<p>已完成：{_boolean_label(item.get("completed"))}</p>'
-        f'<p>上下文分離：{_boolean_label(item.get("context_separated"))}</p>'
-        "</article>"
-        for item in records
-    ) + "</div>"
+    blocks: list[str] = []
+    for item in records:
+        checked = item.get("checked_claim_ids", [])
+        corrected = set(item.get("corrected_claim_ids", []))
+        unverifiable = set(item.get("unverifiable_claim_ids", []))
+        rows: list[str] = []
+        if isinstance(checked, list):
+            for claim_id in checked:
+                if claim_id in corrected:
+                    disposition = "corrected / 已修正"
+                elif claim_id in unverifiable:
+                    disposition = "unverified / 無法驗證"
+                else:
+                    disposition = "accepted / 接受"
+                rows.append(
+                    f"<tr><td><code>{_escape(claim_id)}</code></td>"
+                    f"<td>{_escape(disposition)}</td></tr>"
+                )
+        claim_dispositions = (
+            '<div class="table-wrap"><table><thead><tr><th>主張</th><th>複驗 disposition</th>'
+            '</tr></thead><tbody>' + "".join(rows) + "</tbody></table></div>"
+            if rows
+            else _empty("尚未記錄逐項主張 disposition")
+        )
+        blocks.append(
+            '<article class="verification">'
+            f'<code>{_escape(item.get("id"))}</code>'
+            f'<h3>{_escape(item.get("kind", "未記錄驗證類型"))}</h3>'
+            f'<p>已完成：{_boolean_label(item.get("completed"))}</p>'
+            f'<p>上下文分離：{_boolean_label(item.get("context_separated"))}</p>'
+            f'<p><strong>複驗結論：</strong>{_escape(item.get("disposition", "尚未記錄"))}</p>'
+            f"{claim_dispositions}</article>"
+        )
+    return '<div class="verification-grid">' + "".join(blocks) + "</div>"
 
 
 def _render_validation(report: ValidationReport) -> str:

@@ -1,0 +1,7 @@
+  "anthropic~=0.89",
+  "chronos-forecasting>=2.0",
+  "click>=8.0",
+  "duckdb~=1.5",
+  "google-genai~=1.70",
+  "openpyxl>=3.1",
+  "pandas~=3.0",

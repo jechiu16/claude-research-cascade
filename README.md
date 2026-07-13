@@ -122,13 +122,16 @@ D1：最低成本 ready provider；研究問題可外送，本機檔案不外送
 
 ## Field Acceptance
 
-Three real Parallax questions ran consecutively at Light with `PASS`, zero
-deep calls, and zero search calls. Each retained package contains its card,
-canonical JSON, hash-chained events, raw evidence, and Traditional Chinese HTML.
+Four real Parallax questions passed. The first three exercised the low-cost
+Light path. The fourth ran Standard end to end with `deep=1`, `search=1`,
+external direct captures, per-claim dispositions, and Traditional Chinese
+HTML; it also corrected D1's overly absolute framing of Quack.
 
 - [DuckDB source of truth](examples/field/01-duckdb-source-of-truth/session/report.html)
 - [Regime staleness boundary](examples/field/02-regime-staleness-boundary/session/report.html)
 - [Long-job acceptance test](examples/field/03-long-job-acceptance-test/session/report.html)
+- [DuckDB concurrency boundary](examples/field/04-duckdb-concurrency-boundary/session/report.html)
+- [Decision delta and tier calibration](examples/field/04-duckdb-concurrency-boundary/decision-delta.md)
 - [Acceptance notes](examples/field/README.md)
 
 ## Outputs

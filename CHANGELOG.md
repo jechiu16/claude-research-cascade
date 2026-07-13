@@ -13,8 +13,9 @@ Semantic Versioning once the v2 runtime leaves development status.
 - A host-led contract draft path, targeted re-verification records, and
   budget-exhaustion annotations that stop further external calls without
   withholding the existing package.
-- Three retained Parallax field packages covering a source-of-record decision,
-  a corrected problem framing, and a long-job acceptance-test design.
+- Four retained Parallax field packages: three Light runs plus one Standard
+  end-to-end run with a real Deep call, targeted Search, direct captures, and
+  a recorded decision delta.
 
 ### Changed
 
@@ -23,6 +24,8 @@ Semantic Versioning once the v2 runtime leaves development status.
 - The public skill and harness are shorter; delivery is canonical JSON plus a
   deterministic Traditional Chinese HTML report, without a second full
   Markdown report.
+- HTML verification now renders each checked claim's accepted, corrected, or
+  unverified disposition instead of hiding that decision in canonical JSON.
 - The first interaction is one Query Brief confirmation card with the exact
   budget vectors and ready provider candidates.
 
