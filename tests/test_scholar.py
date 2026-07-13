@@ -76,7 +76,7 @@ class ScholarAdapterTests(unittest.TestCase):
         )
         # scholar requires no credential, so environ stays empty (no os.environ
         # patching needed the way sonar's tests patch in PERPLEXITY_API_KEY).
-        state = new_state("boundary test question", contract, NOW, registry=self.registry, environ={})
+        state = new_state(contract, NOW, registry=self.registry, environ={})
         create_session(self.session, state)
         acquire_permits(
             self.session, "A1", "primary_scout", "probe", "scholar", 1, "fp-test", NOW

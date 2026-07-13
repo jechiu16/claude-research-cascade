@@ -33,6 +33,31 @@ class ContractTests(unittest.TestCase):
         contract = draft_medium_contract()
         self.assertIn("contract is not user-confirmed", validate_contract(contract, self.registry))
 
+    def test_new_contract_requires_normalized_question_and_binds_it_to_card(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract.pop("question")
+        self.assertIn("contract question is required", validate_contract(contract, self.registry))
+
+        contract["question"] = "  Should   cache\n remain enabled?  "
+        normalized = normalize_contract(contract)
+        self.assertEqual(normalized["question"], "Should   cache\n remain enabled?")
+        normalized["confirmation"]["card_sha256"] = contract_card_sha256(normalized)
+        self.assertEqual(validate_contract(normalized, self.registry), [])
+
+        changed = copy.deepcopy(normalized)
+        changed["question"] = "Should cache remain disabled?"
+        self.assertNotEqual(contract_card_sha256(normalized), contract_card_sha256(changed))
+
+    def test_malformed_question_returns_validation_error_without_raising(self) -> None:
+        for question in (None, {}, "Q\x00", "\u200b"):
+            with self.subTest(question=repr(question)):
+                contract = copy.deepcopy(self.contract)
+                contract["question"] = question
+                errors = validate_contract(contract, self.registry)
+                self.assertTrue(
+                    any(error.startswith("contract question") for error in errors), errors
+                )
+
     def test_malformed_contract_returns_errors_instead_of_raising(self) -> None:
         malformed = {"resource_envelope": "not-an-object"}
         errors = validate_contract(malformed, self.registry)

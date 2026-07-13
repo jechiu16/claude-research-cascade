@@ -73,6 +73,7 @@ def _deep_contract(
     conflicts with a shared fixture file."""
 
     contract = {
+        "question": "async deep boundary test",
         "posture": "lookup",
         "tier": "custom",
         "execution": "external_managed",
@@ -129,7 +130,7 @@ class AsyncBoundaryTests(unittest.TestCase):
         self.registry = enabled_registry_copy("perplexity")
         self.contract = _deep_contract(self.registry)
         self.session = Path(self._tempdir.name) / "session"
-        state = new_state("async deep boundary test", self.contract, NOW, self.registry, TEST_ENV)
+        state = new_state(self.contract, NOW, self.registry, TEST_ENV)
         create_session(self.session, state)
         patcher = mock.patch.dict("os.environ", TEST_ENV)
         patcher.start()
@@ -148,7 +149,7 @@ class AsyncBoundaryTests(unittest.TestCase):
 
     def _new_session(self, name: str, contract: dict, registry: dict) -> Path:
         session = Path(self._tempdir.name) / name
-        state = new_state("async boundary guard test", contract, NOW, registry, TEST_ENV)
+        state = new_state(contract, NOW, registry, TEST_ENV)
         create_session(session, state)
         return session
 

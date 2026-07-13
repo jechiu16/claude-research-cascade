@@ -80,7 +80,7 @@ class ArtifactTests(unittest.TestCase):
                 "referenced_records_sha256": provider_records_sha256(records),
             }
         session = self.root / name
-        create_session(session, new_state("artifact test", contract, NOW, resolved, {}))
+        create_session(session, new_state(contract, NOW, resolved, {}))
         return session
 
     def _ingest_local(self, artifact_id: str = "A1") -> dict:
@@ -432,7 +432,7 @@ class PromoteProviderPayloadTests(unittest.TestCase):
             "referenced_records_sha256": provider_records_sha256(records),
         }
         session = self.root / name
-        create_session(session, new_state("provider promote test", contract, NOW, resolved, {}))
+        create_session(session, new_state(contract, NOW, resolved, {}))
         return session
 
     def _execute_and_promote(
@@ -593,6 +593,7 @@ class PromoteProviderPayloadTests(unittest.TestCase):
         resolved = copy.deepcopy(self.registry)
         contract = normalize_contract(
             {
+                "question": "deep promote guard test",
                 "posture": "lookup",
                 "tier": "custom",
                 "execution": "external_managed",
@@ -639,10 +640,7 @@ class PromoteProviderPayloadTests(unittest.TestCase):
         session = self.root / "perplexity-deep-promote-guard"
         create_session(
             session,
-            new_state(
-                "deep promote guard test", contract, NOW, resolved,
-                {"PERPLEXITY_API_KEY": "test-perplexity-key"},
-            ),
+            new_state(contract, NOW, resolved, {"PERPLEXITY_API_KEY": "test-perplexity-key"}),
         )
         state = load_state(session)
         apply_state_patch(

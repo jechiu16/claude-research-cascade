@@ -153,7 +153,7 @@ class HostTierContractTests(unittest.TestCase):
         self.assertIn("tier.capture_missing", {issue.code for issue in report.warnings})
 
     def test_legacy_contract_without_axes_retains_old_semantics(self) -> None:
-        state = new_state("legacy host capture question", confirmed_contract("medium"), NOW, None, {})
+        state = new_state(confirmed_contract("medium"), NOW, None, {})
         state["contract"].pop("execution")
         state["contract"].pop("durability")
         state["session"].pop("contract_semantics")
@@ -179,7 +179,7 @@ class HostTierContractTests(unittest.TestCase):
         for operation in (
             {"op": "replace", "path": "/session/contract_semantics", "value": "legacy"},
             {"op": "remove", "path": "/session/contract_semantics"},
-            {"op": "add", "path": "/session/contract_semantics", "value": "pure_trigger_v1"},
+            {"op": "add", "path": "/session/contract_semantics", "value": "pure_trigger_v2"},
         ):
             with self.subTest(operation=operation), self.assertRaises(ProtectedStatePath):
                 apply_state_patch(
@@ -383,7 +383,7 @@ class HostTierContractTests(unittest.TestCase):
             from research_harness.contracts import contract_card_sha256
 
             contract["confirmation"]["card_sha256"] = contract_card_sha256(contract)
-        create_session(session, new_state("host capture question", contract, NOW, None, {}))
+        create_session(session, new_state(contract, NOW, None, {}))
         return session
 
 

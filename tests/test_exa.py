@@ -177,9 +177,7 @@ class ExaBoundaryTests(unittest.TestCase):
         contract = confirmed_demo_contract(
             route="exa", request_count=1, probe_ceiling=2, registry=self.registry
         )
-        state = new_state(
-            "Exa boundary test", contract, NOW, registry=self.registry, environ=TEST_ENV
-        )
+        state = new_state(contract, NOW, registry=self.registry, environ=TEST_ENV)
         create_session(self.session, state)
         acquire_permits(
             self.session, "A1", "primary_scout", "probe", "exa", 1, "fp-test", NOW

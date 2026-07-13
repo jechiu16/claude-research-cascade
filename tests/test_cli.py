@@ -72,8 +72,6 @@ class CliTests(unittest.TestCase):
         self.run_cli(
             "init",
             str(self.session),
-            "--question",
-            "Choose a cache",
             "--contract",
             str(self.contract),
             "--json",
@@ -126,6 +124,49 @@ class CliTests(unittest.TestCase):
         self.assertTrue(json.loads(validated.stdout)["ok"])
         self.assertTrue(Path(json.loads(rendered.stdout)["report_path"]).exists())
 
+    def test_v2_example_init_smoke_creates_session_and_validates(self) -> None:
+        session = self.root / "v2-example-session"
+        example = self.repo / "examples" / "v2" / "medium-contract.json"
+        initialized = self.run_cli(
+            "init", str(session), "--contract", str(example), "--json", check=False
+        )
+        self.assertEqual(initialized.returncode, 0, initialized.stderr)
+        self.assertTrue((session / "state.json").exists())
+        validated = self.run_cli("validate", str(session), "--json", check=False)
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+        self.assertTrue(json.loads(validated.stdout)["ok"])
+
+    def _assert_deprecated_question_migration(self, question_args: list[str]) -> None:
+        session = self.root / f"deprecated-question-{uuid.uuid4().hex}"
+        result = self.run_cli(
+            "init",
+            str(session),
+            "--question",
+            *question_args,
+            "--contract",
+            str(self.contract),
+            "--json",
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "init --question is deprecated; place the question in the prepare/confirmed contract",
+            result.stderr,
+        )
+        self.assertFalse(session.exists())
+
+    def test_init_deprecated_question_valued_same_rejects_without_session(self) -> None:
+        self._assert_deprecated_question_migration(["Choose a cache"])
+
+    def test_init_deprecated_question_valued_different_rejects_without_session(self) -> None:
+        self._assert_deprecated_question_migration(["Question B"])
+
+    def test_init_deprecated_question_empty_rejects_without_session(self) -> None:
+        self._assert_deprecated_question_migration([""])
+
+    def test_init_deprecated_question_bare_rejects_without_session(self) -> None:
+        self._assert_deprecated_question_migration([])
+
     def test_prepare_rejects_missing_contract_axes(self) -> None:
         contract = draft_medium_contract()
         contract.pop("execution")
@@ -144,7 +185,7 @@ class CliTests(unittest.TestCase):
         host_contract["durability"] = "canonical_package"
         host_contract["confirmation"]["card_sha256"] = contract_card_sha256(host_contract)
         insufficient = self.root / "insufficient"
-        create_session(insufficient, new_state("host package", host_contract, NOW, None, {}))
+        create_session(insufficient, new_state(host_contract, NOW, None, {}))
         result = self.run_cli("validate", str(insufficient), "--json", check=False)
         self.assertEqual(result.returncode, 2)
         rendered = self.run_cli("render", str(insufficient), "--json")
@@ -237,8 +278,6 @@ class CliTests(unittest.TestCase):
         self.run_cli(
             "init",
             str(probe_session),
-            "--question",
-            "Choose a cache",
             "--contract",
             str(probe_contract),
             "--json",
@@ -318,12 +357,20 @@ class CliTests(unittest.TestCase):
         self.run_cli(
             "init",
             str(self.session),
-            "--question",
-            "Q",
             "--contract",
             str(confirmed_path),
             "--json",
         )
+
+    def test_init_rejects_confirmed_question_swap(self) -> None:
+        swapped = copy.deepcopy(json.loads(self.contract.read_text(encoding="utf-8")))
+        swapped["question"] = "Question B"
+        swapped_path = self._write_json(swapped, "swapped.json")
+        result = self.run_cli(
+            "init", str(self.session), "--contract", str(swapped_path), "--json", check=False
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("confirmed card hash does not match contract", result.stderr)
 
     def test_confirm_rejects_card_hash_not_shown_to_user(self) -> None:
         prepared = json.loads(
@@ -403,8 +450,6 @@ class CliTests(unittest.TestCase):
         result = self.run_cli(
             "init",
             str(self.session),
-            "--question",
-            "Q",
             "--contract",
             str(self.draft),
             "--json",
@@ -421,8 +466,6 @@ class CliTests(unittest.TestCase):
         result = self.run_cli(
             "init",
             str(self.session),
-            "--question",
-            "Q",
             "--contract",
             str(self.draft),
             "--json",
@@ -647,8 +690,6 @@ class CliTests(unittest.TestCase):
         self.run_cli(
             "init",
             str(self.session),
-            "--question",
-            "Q",
             "--contract",
             str(contract),
             "--registry-overlay",
@@ -737,7 +778,6 @@ class CliTests(unittest.TestCase):
         session = self.root / "github-promote-session"
         self.run_cli(
             "init", str(session),
-            "--question", "Choose a bounded dependency",
             "--contract", str(contract_path),
             "--json",
         )
@@ -812,7 +852,6 @@ class CliTests(unittest.TestCase):
         session = self.root / "github-traversal-session"
         self.run_cli(
             "init", str(session),
-            "--question", "Choose a bounded dependency",
             "--contract", str(contract_path),
             "--json",
         )

@@ -1,4 +1,5 @@
 {
+  "question": "Choose a cache",
   "posture": "lookup",
   "tier": "medium",
   "execution": "external_managed",
@@ -98,8 +99,8 @@
   "confirmation": {
     "confirmed_by": "user",
     "confirmed_at": "2026-07-10T12:00:00Z",
-    "card_sha256": "8c88200877b29d6076e37031d897180f9c713ad65c31473440ce8802897c5200",
-    "registry_sha256": "16fffabb8cdddea2bfe095850f905c36da746dd56cfcadb95f5b54685417de6a",
-    "referenced_records_sha256": "e0fdcaea25dc84049d028cc4b994517488a8f7d5b0469f27558d8d174160bb4d"
+    "card_sha256": "8217add53321ae6712d86e55ff74fc4d4b7b59f0a636911dbdb03ae782ea0fd7",
+    "registry_sha256": "e465b1f068bff5b0a70ca2710eb6c6f074330f317599cb9be5f2e9b3ce0034b5",
+    "referenced_records_sha256": "f3c99ac48d165d920b8c8d2d97cf874c61b1d4f2ed2ba557cc3449d0c521634e"
   }
 }

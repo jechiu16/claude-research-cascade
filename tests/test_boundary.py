@@ -67,7 +67,7 @@ class BoundaryTests(unittest.TestCase):
         self.addCleanup(self._tempdir.cleanup)
         self.session = Path(self._tempdir.name) / "session"
         contract = confirmed_demo_contract(route="sonar", request_count=1, probe_ceiling=2)
-        state = new_state("boundary test question", contract, NOW, environ=TEST_ENV)
+        state = new_state(contract, NOW, environ=TEST_ENV)
         create_session(self.session, state)
         patcher = mock.patch.dict("os.environ", TEST_ENV)
         patcher.start()

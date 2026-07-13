@@ -16,7 +16,6 @@ PY=/Users/jechiu/dev/parallax/.venv/bin/python
 SESSION="$(mktemp -d)/session"
 
 "$PY" scripts/research_state.py init "$SESSION" \
-  --question "Choose a cache" \
   --contract examples/v2/medium-contract.json \
   --json
 

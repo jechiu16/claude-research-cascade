@@ -93,10 +93,7 @@ class PypiBoundaryTests(unittest.TestCase):
         contract = confirmed_demo_contract(
             route="pypi", request_count=1, probe_ceiling=2, registry=self.registry
         )
-        state = new_state(
-            "pypi adapter boundary test", contract, NOW,
-            registry=self.registry, environ=TEST_ENV,
-        )
+        state = new_state(contract, NOW, registry=self.registry, environ=TEST_ENV)
         create_session(self.session, state)
         acquire_permits(
             self.session, "A1", "primary_scout", "probe", "pypi", 1, "fp-test", NOW

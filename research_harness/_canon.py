@@ -10,11 +10,36 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 
 RETENTION_RANK = {"forbidden": 0, "ephemeral": 1, "session": 2, "persistent": 3}
+
+
+def canonical_question(value: Any) -> str:
+    """Canonicalize a user question without changing its internal layout."""
+
+    if not isinstance(value, str):
+        raise ValueError("question must be a string")
+    normalized = unicodedata.normalize("NFC", value).replace("\r\n", "\n").replace("\r", "\n")
+    for character in normalized:
+        codepoint = ord(character)
+        category = unicodedata.category(character)
+        if category == "Cc" and character not in {"\n", "\t"}:
+            raise ValueError("question contains a forbidden control character")
+        if codepoint in {0x200B, 0xFEFF, 0x2060}:
+            raise ValueError("question contains a forbidden zero-width character")
+        if 0x202A <= codepoint <= 0x202E or 0x2066 <= codepoint <= 0x2069:
+            raise ValueError("question contains a forbidden bidi control")
+    normalized = normalized.strip()
+    if not normalized or not any(
+        not character.isspace() and unicodedata.category(character)[0] not in {"C", "M"}
+        for character in normalized
+    ):
+        raise ValueError("question must not be empty or visual-only")
+    return normalized
 
 
 def canonical_json(value: Any) -> bytes:

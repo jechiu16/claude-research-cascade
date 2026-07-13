@@ -204,9 +204,7 @@ class EuropePmcAdapterTests(unittest.TestCase):
         # europe-pmc requires no credential, so environ stays empty -- no
         # os.environ patching needed the way sonar's/openalex's tests patch
         # in a key.
-        state = new_state(
-            "boundary test question", contract, NOW, registry=self.registry, environ={}
-        )
+        state = new_state(contract, NOW, registry=self.registry, environ={})
         create_session(self.session, state)
         acquire_permits(
             self.session, "A1", "primary_scout", "probe", "europe-pmc", 1, "fp-test", NOW

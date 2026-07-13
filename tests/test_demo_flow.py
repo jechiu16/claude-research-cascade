@@ -42,6 +42,23 @@ class DemoFlowTests(unittest.TestCase):
         demo = next(p for p in registry["providers"] if p["id"] == "demo-probe")
         self.assertFalse(demo["evidence_capabilities"]["can_support_claims"])
 
+    def test_demo_hashes_the_canonical_contract_question(self) -> None:
+        from research_harness._canon import canonical_question, sha256_hex
+
+        question = "  A  question\r\n\twith  code  "
+        with tempfile.TemporaryDirectory() as tempdir:
+            session = Path(tempdir) / "session"
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = research_state.main(["demo", str(session), "--question", question, "--json"])
+            self.assertEqual(code, 0)
+            state = json.loads((session / "state.json").read_text(encoding="utf-8"))
+            self.assertEqual(state["contract"]["question"], canonical_question(question))
+            self.assertEqual(
+                state["retrieval_occurrences"][0]["query_hash"],
+                sha256_hex(canonical_question(question)),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

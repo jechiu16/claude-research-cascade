@@ -37,7 +37,7 @@ class QuotaTests(unittest.TestCase):
     ) -> Path:
         session = self.root / name
         contract = confirmed_demo_contract(route, request_count, probe_ceiling, self.registry)
-        state = new_state("quota test", contract, NOW, self.registry, {})
+        state = new_state(contract, NOW, self.registry, {})
         create_session(session, state)
         return session
 

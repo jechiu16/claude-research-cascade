@@ -272,9 +272,7 @@ class OpenAlexAdapterTests(unittest.TestCase):
         contract = confirmed_demo_contract(
             route="openalex", request_count=1, probe_ceiling=2, registry=self.registry
         )
-        state = new_state(
-            "boundary test question", contract, NOW, registry=self.registry, environ=TEST_ENV
-        )
+        state = new_state(contract, NOW, registry=self.registry, environ=TEST_ENV)
         create_session(self.session, state)
         acquire_permits(
             self.session, "A1", "primary_scout", "probe", "openalex", 1, "fp-test", NOW

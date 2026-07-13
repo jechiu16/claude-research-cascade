@@ -40,7 +40,7 @@ class StorageTests(unittest.TestCase):
         self.session = self.root / "session"
         registry = load_provider_registry()
         contract = confirmed_medium_contract(registry)
-        self.state = new_state("Choose a cache", contract, NOW, registry, {})
+        self.state = new_state(contract, NOW, registry, {})
         create_session(self.session, self.state)
 
     def test_create_session_writes_state_and_genesis_event(self) -> None:

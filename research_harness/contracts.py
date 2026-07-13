@@ -5,7 +5,12 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
-from ._canon import is_count as _is_count, is_positive_count as _is_positive_count, sha256_hex
+from ._canon import (
+    canonical_question,
+    is_count as _is_count,
+    is_positive_count as _is_positive_count,
+    sha256_hex,
+)
 from .providers import (
     ProviderRegistryError,
     load_provider_registry,
@@ -45,6 +50,13 @@ def normalize_contract(data: dict[str, Any]) -> dict[str, Any]:
     contract = copy.deepcopy(data)
     if not isinstance(contract, dict):
         return contract
+    if "question" in contract:
+        try:
+            contract["question"] = canonical_question(contract["question"])
+        except ValueError:
+            # Keep malformed input available for validation instead of leaking
+            # a normalization exception from a public validation path.
+            pass
     resource = contract.get("resource_envelope")
     if resource is None:
         resource = {}
@@ -248,8 +260,18 @@ def _validate_contract_core(
     resolved_registry_sha256: str,
     *,
     allow_legacy_axes: bool = False,
+    allow_legacy_question: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    question = contract.get("question")
+    if question is None:
+        if not allow_legacy_question:
+            errors.append("contract question is required")
+    else:
+        try:
+            canonical_question(question)
+        except ValueError as exc:
+            errors.append(f"contract question is invalid: {exc}")
     if contract.get("posture") not in POSTURES:
         errors.append("contract posture is invalid")
     if contract.get("tier") not in TIERS:
@@ -325,4 +347,29 @@ def _validate_persisted_contract(
         resolved,
         registry_hash,
         allow_legacy_axes=True,
+        allow_legacy_question=True,
+    )
+
+
+def _validate_persisted_contract_v1(
+    contract: dict[str, Any],
+    registry: dict[str, Any],
+    *,
+    resolved_registry_sha256: Optional[str] = None,
+) -> list[str]:
+    """Validate a persisted v1 contract: axes required, question optional."""
+
+    if not isinstance(contract, dict):
+        return ["contract must be an object"]
+    normalized = normalize_contract(contract)
+    resolved = copy.deepcopy(registry)
+    registry_errors = validate_provider_registry(resolved)
+    if registry_errors:
+        return registry_errors
+    registry_hash = resolved_registry_sha256 or provider_registry_sha256(resolved)
+    return _validate_contract_core(
+        normalized,
+        resolved,
+        registry_hash,
+        allow_legacy_question=True,
     )

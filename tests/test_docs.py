@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DocumentationTests(unittest.TestCase):
+    def test_v2_example_init_uses_question_from_contract(self) -> None:
+        text = (ROOT / "examples" / "v2" / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("--question", text)
+        self.assertIn("--contract examples/v2/medium-contract.json", text)
+
     def test_canonical_trigger_card_is_traditional_chinese_and_kernel_free(self) -> None:
         text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         start = text.index("<!-- PURE_TRIGGER_CARD_START -->")

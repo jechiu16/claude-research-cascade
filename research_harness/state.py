@@ -8,7 +8,12 @@ import uuid
 from typing import Any, Mapping, Optional
 
 from ._canon import sha256_hex
-from .contracts import normalize_contract, validate_contract, _validate_persisted_contract
+from .contracts import (
+    _validate_persisted_contract,
+    _validate_persisted_contract_v1,
+    normalize_contract,
+    validate_contract,
+)
 from .providers import (
     load_provider_registry,
     preflight_contract_routes,
@@ -20,7 +25,9 @@ from .providers import (
 
 
 SCHEMA_VERSION = "2.0"
-CONTRACT_SEMANTICS = "pure_trigger_v1"
+CONTRACT_SEMANTICS_V1 = "pure_trigger_v1"
+CONTRACT_SEMANTICS_V2 = "pure_trigger_v2"
+CONTRACT_SEMANTICS = CONTRACT_SEMANTICS_V2
 REQUIRED_SECTIONS = (
     "schema_version",
     "session",
@@ -73,14 +80,11 @@ def _session_id() -> str:
 
 
 def new_state(
-    question: str,
     contract: dict[str, Any],
     now: str,
     registry: Optional[dict[str, Any]] = None,
     environ: Optional[Mapping[str, str]] = None,
 ) -> dict[str, Any]:
-    if not isinstance(question, str) or not question.strip():
-        raise ValueError("question must be a non-empty string")
     if not isinstance(now, str) or not now:
         raise ValueError("now must be a non-empty timestamp")
     resolved = copy.deepcopy(load_provider_registry() if registry is None else registry)
@@ -111,7 +115,7 @@ def new_state(
             "providers": providers,
             "preflight": preflight,
         },
-        "framing": {"question": question.strip(), "assumptions": [], "exclusions": []},
+        "framing": {"question": normalized["question"], "assumptions": [], "exclusions": []},
         "summary": {
             "status": "IN_PROGRESS",
             "decision": "",
@@ -245,7 +249,7 @@ def validate_state_document(state: dict[str, Any]) -> list[str]:
         for field in ("id", "created_at", "updated_at"):
             if not isinstance(session.get(field), str) or not session.get(field):
                 errors.append(f"session {field} is required")
-        if session_semantics not in {None, CONTRACT_SEMANTICS}:
+        if session_semantics not in {None, CONTRACT_SEMANTICS_V1, CONTRACT_SEMANTICS_V2}:
             errors.append("session contract_semantics is invalid")
 
     capabilities = state.get("capabilities")
@@ -278,11 +282,12 @@ def validate_state_document(state: dict[str, Any]) -> list[str]:
         snapshot_registry = {"schema_version": "1.0", "providers": copy.deepcopy(providers)}
         registry_errors = validate_provider_registry(snapshot_registry)
         errors.extend(f"capability snapshot: {error}" for error in registry_errors)
-        contract_errors = (
-            validate_contract
-            if session_semantics
-            else _validate_persisted_contract
-        )
+        if session_semantics == CONTRACT_SEMANTICS_V2:
+            contract_errors = validate_contract
+        elif session_semantics == CONTRACT_SEMANTICS_V1:
+            contract_errors = _validate_persisted_contract_v1
+        else:
+            contract_errors = _validate_persisted_contract
         errors.extend(
             f"contract: {error}"
             for error in contract_errors(
@@ -293,6 +298,16 @@ def validate_state_document(state: dict[str, Any]) -> list[str]:
         )
     elif not isinstance(contract, dict):
         errors.append("state contract must be an object")
+
+    framing = state.get("framing")
+    if session_semantics == CONTRACT_SEMANTICS_V2:
+        contract_question = contract.get("question") if isinstance(contract, dict) else None
+        if not isinstance(contract_question, str) or not contract_question:
+            errors.append("contract question is required")
+        elif not isinstance(framing, dict):
+            errors.append("state framing must be an object")
+        elif framing.get("question") != contract_question:
+            errors.append("framing question must match contract question")
 
     ids: dict[str, set[str]] = {}
     for section in ID_SECTIONS:

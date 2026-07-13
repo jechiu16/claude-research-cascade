@@ -18,11 +18,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+_DEPRECATED_QUESTION_PRESENT = object()
+
 from research_harness.artifacts import (
     ingest_fetched_source,
     ingest_local_artifact,
     promote_provider_payload,
 )
+from research_harness._canon import canonical_question
 from research_harness.boundary import (
     execute_deep_poll,
     execute_deep_submit,
@@ -278,12 +281,16 @@ def command_confirm(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 
 def command_init(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    if getattr(args, "_deprecated_question", None) is not None:
+        raise ValueError(
+            "init --question is deprecated; place the question in the prepare/confirmed contract"
+        )
     contract_payload = _read_json(args.contract)
     if isinstance(contract_payload, dict) and isinstance(contract_payload.get("contract"), dict):
         contract_payload = contract_payload["contract"]
     contract = normalize_contract(contract_payload)
     registry = _registry(args.registry_overlay)
-    state = new_state(args.question, contract, args.now or _now(), registry, os.environ)
+    state = new_state(contract, args.now or _now(), registry, os.environ)
     session = Path(args.session)
     create_session(session, state)
     return {
@@ -367,7 +374,7 @@ def command_attempt(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     }, 0
 
 
-def _demo_contract(registry: dict[str, Any]) -> dict[str, Any]:
+def _demo_contract(registry: dict[str, Any], question: str) -> dict[str, Any]:
     """Confirmed zero-network demo contract: one demo-probe, one organizer pass.
 
     Running `demo` IS the confirmation — the route is no-network, no-key,
@@ -411,6 +418,7 @@ def _demo_contract(registry: dict[str, Any]) -> dict[str, Any]:
         "artifact_policy": {"default_retention": "session", "allow_provider_payloads": False},
     }
     contract = normalize_contract(contract)
+    contract["question"] = canonical_question(question)
     contract["confirmation"] = {
         "confirmed_by": "user",
         "confirmed_at": _now(),
@@ -425,14 +433,14 @@ def command_demo(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     from research_harness.storage import create_session as _create
 
     registry = _registry(None)
-    contract = _demo_contract(registry)
     question = args.question or "demo: prove the permit->attempt->occurrence->validate->render loop"
+    contract = _demo_contract(registry, question)
     now = args.now or _now()
     session = Path(args.session)
-    state = _new_state(question, contract, now, registry, os.environ)
+    state = _new_state(contract, now, registry, os.environ)
     _create(session, state)
     _acquire(session, "demo-1", "primary_scout", "probe", "demo-probe", 1, "demo", now)
-    executed = execute_probe(session, "demo-1", question, now)
+    executed = execute_probe(session, "demo-1", contract["question"], now)
     rendered = render_session_result(session)
     return {
         "session_id": state["session"]["id"],
@@ -710,7 +718,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = subparsers.add_parser("init", help="create a canonical v2 session")
     init.add_argument("session")
-    init.add_argument("--question", required=True)
+    init.add_argument(
+        "--question",
+        dest="_deprecated_question",
+        nargs="?",
+        const=_DEPRECATED_QUESTION_PRESENT,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
     init.add_argument("--contract", required=True)
     init.add_argument("--registry-overlay")
     init.add_argument("--now")

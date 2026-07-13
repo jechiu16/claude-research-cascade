@@ -74,6 +74,7 @@ def _deep_contract(
     See tests/test_async_boundary.py::_deep_contract for the original."""
 
     contract = {
+        "question": "openai-deep adapter test",
         "posture": "lookup",
         "tier": "custom",
         "execution": "external_managed",
@@ -130,7 +131,7 @@ class OpenAIDeepAdapterTests(unittest.TestCase):
         self.registry = enabled_registry_copy("openai-deep")
         self.contract = _deep_contract(self.registry)
         self.session = Path(self._tempdir.name) / "session"
-        state = new_state("openai-deep adapter test", self.contract, NOW, self.registry, TEST_ENV)
+        state = new_state(self.contract, NOW, self.registry, TEST_ENV)
         create_session(self.session, state)
         patcher = mock.patch.dict("os.environ", TEST_ENV)
         patcher.start()

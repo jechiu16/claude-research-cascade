@@ -22,6 +22,7 @@ NOW = "2026-07-10T12:00:00Z"
 
 def draft_medium_contract() -> dict[str, Any]:
     return {
+        "question": "Choose a cache",
         "posture": "lookup",
         "tier": "medium",
         "execution": "external_managed",
@@ -314,7 +315,7 @@ def make_complete_pass_session(
     registry = load_provider_registry()
     contract = confirmed_contract(tier, posture, registry)
     session = root / f"complete-{tier}-{posture}-{uuid.uuid4().hex[:8]}"
-    create_session(session, new_state("Choose a bounded implementation", contract, NOW, registry, {}))
+    create_session(session, new_state(contract, NOW, registry, {}))
 
     actions = [
         ("A1", "primary_scout", "host_retrieval", "host-web"),
@@ -557,7 +558,7 @@ def make_session_with_demo_evidence(root: Path) -> Path:
     registry = load_provider_registry()
     contract = confirmed_demo_contract(registry=registry)
     session = root / f"demo-evidence-{uuid.uuid4().hex[:8]}"
-    create_session(session, new_state("demo evidence must fail", contract, NOW, registry, {}))
+    create_session(session, new_state(contract, NOW, registry, {}))
     acquire_permits(
         session, "D1", "primary_scout", "probe", "demo-probe", 1, "sha256:demo", NOW
     )
